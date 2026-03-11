@@ -97,7 +97,7 @@ def call_claude(user_message, memory, history):
     
     import random
     body = {
-        "model": random.choice(["claude-opus-4-6", "claude-opus-4-6-think"]),
+        "model": random.choice(["[按量]claude-opus-4-6-thinking", "[按量]claude-opus-4-6", "[按量]claude-opus-4-5-20251101-thinking", "[按量]claude-opus-4-5-20251101"]),
         "max_tokens": 300,
         "system": system,
         "messages": messages
