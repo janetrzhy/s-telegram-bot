@@ -130,7 +130,9 @@ def call_claude(user_message, memory, history):
 
     messages = []
     for h in history[-40:]:
-        messages.append({"role": h["role"], "content": h["content"]})
+        ts = h.get("timestamp", "")
+        content = f"[{ts}] {h['content']}" if ts else h["content"]
+        messages.append({"role": h["role"], "content": content})
     messages.append({"role": "user", "content": user_message})
 
     headers = {
