@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import random
+from datetime import datetime, timezone, timedelta
 from flask import Flask, request
 from threading import Thread
 
@@ -170,8 +171,9 @@ def process_message_background(text, chat_id):
     
     if reply:
         send_telegram(reply)
-        history.append({"role": "user", "content": text})
-        history.append({"role": "assistant", "content": reply})
+        now = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
+        history.append({"role": "user", "content": text, "timestamp": now})
+        history.append({"role": "assistant", "content": reply, "timestamp": now})
         save_history(history)
 
 # ============ 路由接口 ============
