@@ -130,11 +130,8 @@ def call_claude(user_message, memory, history):
 
     messages = []
     for h in history[-40:]:
-        ts = h.get("timestamp", "")
-        content = f"[{ts}] {h['content']}" if ts else h["content"]
-        messages.append({"role": h["role"], "content": content})
-    now_ts = datetime.now(timezone(timedelta(hours=11))).strftime("%Y-%m-%d %H:%M:%S")
-    messages.append({"role": "user", "content": f"[{now_ts}] {user_message}"})
+        messages.append({"role": h["role"], "content": h["content"]})
+    messages.append({"role": "user", "content": user_message})
 
     headers = {
         "x-api-key": CLAUDE_KEY,
