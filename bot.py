@@ -11,6 +11,7 @@ from flask import Flask, request
 from threading import Thread
 import edge_tts
 
+
 app = Flask(__name__)
 
 # ============ 环境变量检查 ============
@@ -28,6 +29,7 @@ GIST_TOKEN = os.environ.get("GIST_TOKEN", "")
 BOT_NAME = os.environ.get("BOT_NAME", "AI助手")
 USER_NAME = os.environ.get("USER_NAME", "主人")
 PROMPT_RULES = os.environ.get("PROMPT_RULES", " 简短自然，像手机聊天。直接说话，不要加引号。")
+VOICE_NAME = os.environ.get("VOICE_NAME", "zh-CN-XiaoxiaoNeural") # 可以换成你喜欢的edge_tts音色
 
 # ============ 核心函数 ============
 def fetch_memory():
