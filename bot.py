@@ -28,6 +28,7 @@ GIST_TOKEN = os.environ.get("GIST_TOKEN", "")
 BOT_NAME = os.environ.get("BOT_NAME", "AI助手")
 USER_NAME = os.environ.get("USER_NAME", "主人")
 PROMPT_RULES = os.environ.get("PROMPT_RULES", " 简短自然，像手机聊天。直接说话，不要加引号。")
+VOICE_NAME = os.environ.get("VOICE_NAME", "zh-CN-YunxiNeural")
 
 # ============ 核心函数 ============
 def fetch_memory():
@@ -179,7 +180,7 @@ def send_telegram_voice(text):
             ogg_path = f.name
 
         async def _tts():
-            communicate = edge_tts.Communicate(text, VOICE_NAME)
+            communicate = edge_tts.Communicate(text, VOICE_NAME, rate="-10%", pitch="-5Hz")
             await communicate.save(mp3_path)
 
         asyncio.run(_tts())
