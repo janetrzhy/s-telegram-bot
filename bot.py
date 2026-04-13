@@ -197,7 +197,7 @@ def _generate_minimax_audio(text, mp3_path, voice_id):
         "stream": False,
         "voice_setting": {
             "voice_id": voice_id,
-            "speed": 0.9,    # 刚才调好的语速
+            "speed": 1.0,    # 刚才调好的语速
             "pitch": 0,      # 微微上扬的音调
             "vol": 1.0
         },
