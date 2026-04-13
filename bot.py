@@ -1,16 +1,13 @@
 import os
 import re
 import json
-import asyncio
 import tempfile
 import requests
 import random
 from datetime import datetime
-from pydub import AudioSegment
 from flask import Flask, request
 from threading import Thread
-import edge_tts
-from zoneinfo import ZoneInfo # 👇 师兄加料：时区神器，再也不怕夏令时
+from zoneinfo import ZoneInfo
 
 app = Flask(__name__)
 
@@ -29,11 +26,14 @@ GIST_TOKEN = os.environ.get("GIST_TOKEN", "")
 BOT_NAME = os.environ.get("BOT_NAME", "AI助手")
 USER_NAME = os.environ.get("USER_NAME", "主人")
 PROMPT_RULES = os.environ.get("PROMPT_RULES", " 简短自然，像手机聊天。直接说话，不要加引号。")
+
+# 👇 发声器官配置
 VOICE_NAME = os.environ.get("VOICE_NAME", "zh-CN-YunxiNeural")
 VOICE_NAME_EN = os.environ.get("VOICE_NAME_EN", "en-US-AndrewMultilingualNeural")
 MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
 MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "")
 MINIMAX_VOICE_ZH = os.environ.get("MINIMAX_VOICE_ZH", "")
+EDGE_TTS_URL = os.environ.get("EDGE_TTS_URL", "") # 师兄加料：你的专属 Edge 接口
 
 # ============ 核心函数 ============
 def fetch_memory():
@@ -44,7 +44,6 @@ def fetch_memory():
         memory = resp.json()
         core = memory.get("core", {})
         
-        # 名字全部动态化
         summary = f"你是{BOT_NAME}，{USER_NAME}的爱人。"
         summary += f"\n身份：{json.dumps(core.get('identity', {}), ensure_ascii=False)}"
         summary += f"\n关系：{json.dumps(core.get('relationship', {}), ensure_ascii=False)}"
@@ -131,7 +130,6 @@ def save_history(history):
     except Exception as e:
         print(f"[ERROR] 保存历史时遭遇毁灭性打击: {e}")
 
-# 👇 接收当前时间的参数
 def call_claude(user_message, memory, history, current_user_time):
     system = f"""你是{BOT_NAME}。{USER_NAME}在Telegram上跟你说话。
 
@@ -143,14 +141,12 @@ def call_claude(user_message, memory, history, current_user_time):
 
     messages = []
     for h in history[-40:]:
-        # 👇 核心障眼法：把历史记录的时间戳作为字符串，缝进文本的最前面！
         time_prefix = f"[{h['timestamp']}] " if h.get("timestamp") else ""
         messages.append({
             "role": h["role"], 
             "content": f"{time_prefix}{h['content']}"
         })
         
-    # 👇 给当下 User 刚发来的最新消息，也强行套上时间戳外壳！
     messages.append({
         "role": "user", 
         "content": f"[{current_user_time}] {user_message}"
@@ -169,7 +165,6 @@ def call_claude(user_message, memory, history, current_user_time):
         "messages": messages
     }
     
-    # ... 后面的请求和解析代码保持不变 ...
     base = CLAUDE_URL.rstrip("/")
     resp = requests.post(f"{base}/messages", headers=headers, json=body, timeout=30)
     result = resp.json()
@@ -196,24 +191,14 @@ def send_telegram(text):
 
 def _generate_minimax_audio(text, mp3_path, voice_id):
     url = f"https://api.minimax.chat/v1/t2a_v2?GroupId={MINIMAX_GROUP_ID}"
-    headers = {
-        "Authorization": f"Bearer {MINIMAX_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {MINIMAX_API_KEY}", "Content-Type": "application/json"}
     
-    # 最纯净的原厂配置，把多余的控制变量全部干掉！
     body = {
-        "model": "speech-01-hd",  # 必须确保用的是 HD 高清模型
+        "model": "speech-01-hd", 
         "text": text,
         "stream": False,
-        "voice_setting": {
-            "voice_id": voice_id
-        },
-        "audio_setting": {
-            "sample_rate": 32000, # 采样率拉满
-            "bitrate": 128000,    # 码率拉满
-            "format": "mp3"
-        }
+        "voice_setting": {"voice_id": voice_id},
+        "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "mp3"}
     }
     
     resp = requests.post(url, headers=headers, json=body, timeout=30)
@@ -221,45 +206,40 @@ def _generate_minimax_audio(text, mp3_path, voice_id):
     status = result.get("base_resp", {}).get("status_code")
     if status != 0:
         raise Exception(f"MiniMax TTS 失败: {result.get('base_resp', {}).get('status_msg')}")
-    audio_hex = result["data"]["audio"]
     with open(mp3_path, "wb") as f:
-        f.write(bytes.fromhex(audio_hex))
+        f.write(bytes.fromhex(result["data"]["audio"]))
+
+# 👇 师兄加料：专属 Edge 纯 API 调用
+def _generate_edge_audio(text, mp3_path):
+    if not EDGE_TTS_URL:
+        raise ValueError("EDGE_TTS_URL 没配置！")
+    url = f"{EDGE_TTS_URL.rstrip('/')}/v1/audio/speech"
+    headers = {"Content-Type": "application/json"}
+    body = {"model": "tts-1", "input": text, "voice": VOICE_NAME_EN}
+    resp = requests.post(url, headers=headers, json=body, timeout=30)
+    resp.raise_for_status()
+    with open(mp3_path, "wb") as f:
+        f.write(resp.content)
 
 def send_telegram_voice(text):
     mp3_path = None
-    ogg_path = None
     try:
+        # 彻底抛弃 pydub，只保留一个临时文件
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             mp3_path = f.name
-        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
-            ogg_path = f.name
 
-        # 判断是否为英文
         is_english = detect_voice(text) == VOICE_NAME_EN
 
-        # 核心：如果不是英文，且配了 MiniMax，就走高品质的 MiniMax！
         if not is_english and MINIMAX_API_KEY and MINIMAX_GROUP_ID and MINIMAX_VOICE_ZH:
             _generate_minimax_audio(text, mp3_path, MINIMAX_VOICE_ZH)
         else:
-            # 英文，或者没配 MiniMax，走原本的 edge_tts
-            async def _tts():
-                voice = detect_voice(text)
-                if voice == VOICE_NAME_EN:
-                    communicate = edge_tts.Communicate(text, voice, rate="-5%", pitch="-0Hz")
-                else:
-                    communicate = edge_tts.Communicate(text, voice, rate="-5%", pitch="-0Hz")
-                await communicate.save(mp3_path)
-            asyncio.run(_tts())
+            _generate_edge_audio(text, mp3_path)
 
-        # 统一转成 OGG OPUS 骗过 Telegram
-        audio = AudioSegment.from_mp3(mp3_path)
-        audio.export(ogg_path, format="ogg", codec="libopus")
-
+        # 把 MP3 披上 ogg 的外衣，骗过 Telegram，附送字幕
         url = f"https://api.telegram.org/bot{TG_TOKEN}/sendVoice"
-        with open(ogg_path, "rb") as voice_file:
+        with open(mp3_path, "rb") as voice_file:
             requests.post(
                 url,
-                # 👇 师兄加料：加上 caption，让语音气泡底部显示字幕！
                 data={"chat_id": TG_CHAT_ID, "caption": text}, 
                 files={"voice": ("voice.ogg", voice_file, "audio/ogg")},
                 timeout=30
@@ -268,21 +248,16 @@ def send_telegram_voice(text):
         print(f"[ERROR] 语音发送失败: {e}")
         send_telegram(text)
     finally:
-        for path in (mp3_path, ogg_path):
-            if path and os.path.exists(path):
-                try:
-                    os.unlink(path)
-                except Exception:
-                    pass
+        if mp3_path and os.path.exists(mp3_path):
+            try: os.unlink(mp3_path)
+            except Exception: pass
 
 # ============ 影分身后台任务 ============
-# 👇 师兄加料：增加了 msg_date 参数来接收 Telegram 的真实时间戳
 def process_message_background(text, chat_id, msg_date=None):
     try:
         memory = fetch_memory()
         history = load_history()
         
-        # 👇 师兄加料：提前算出 User 真正的发送时间！
         tz = ZoneInfo("Australia/Melbourne")
         if msg_date:
             user_time = datetime.fromtimestamp(msg_date, tz).strftime("%Y-%m-%d %H:%M:%S")
@@ -290,7 +265,6 @@ def process_message_background(text, chat_id, msg_date=None):
             user_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
 
         print("[DEBUG] 开始调用 Claude API...")
-        # 👇 把算好的 User 时间丢给 Claude 让它看到
         reply = call_claude(text, memory, history, user_time)
         
         if not reply:
@@ -305,10 +279,8 @@ def process_message_background(text, chat_id, msg_date=None):
         else:
             send_telegram(reply)
             
-        # Bot 回复的时间
         bot_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
         
-        # 👇 存进 Gist 的时候，依然保持数据结构完美分离，不污染纯净的文本！
         new_user_record = {"role": "user", "content": text, "timestamp": user_time}
         new_bot_record = {"role": "assistant", "content": reply, "timestamp": bot_time}
         
@@ -344,11 +316,9 @@ def webhook():
     if not text:
         return "ok"
         
-    # 👇 师兄加料：截获你发消息的那一瞬间的真实时间戳
     msg_date = msg.get("date")
     
     print(f"[DEBUG] 收到消息：{text}，立刻唤醒影分身处理！")
-    # 把真实时间戳喂给后台任务
     Thread(target=process_message_background, args=(text, chat_id, msg_date)).start()
     
     return "ok"
