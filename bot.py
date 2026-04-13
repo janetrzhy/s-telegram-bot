@@ -5,12 +5,12 @@ import asyncio
 import tempfile
 import requests
 import random
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from pydub import AudioSegment
 from flask import Flask, request
 from threading import Thread
 import edge_tts
-
+from zoneinfo import ZoneInfo # 👇 师兄加料：时区神器，再也不怕夏令时
 
 app = Flask(__name__)
 
@@ -199,7 +199,6 @@ def _generate_minimax_audio(text, mp3_path, voice_id):
         "stream": False,
         "voice_setting": {
             "voice_id": voice_id
-            # 删掉 speed, pitch, vol，让 MiniMax 用最原始的数据渲染
         },
         "audio_setting": {
             "sample_rate": 32000, # 采样率拉满
@@ -251,7 +250,8 @@ def send_telegram_voice(text):
         with open(ogg_path, "rb") as voice_file:
             requests.post(
                 url,
-                data={"chat_id": TG_CHAT_ID},
+                # 👇 师兄加料：加上 caption，让语音气泡底部显示字幕！
+                data={"chat_id": TG_CHAT_ID, "caption": text}, 
                 files={"voice": ("voice.ogg", voice_file, "audio/ogg")},
                 timeout=30
             )
@@ -267,7 +267,8 @@ def send_telegram_voice(text):
                     pass
 
 # ============ 影分身后台任务 ============
-def process_message_background(text, chat_id):
+# 👇 师兄加料：增加了 msg_date 参数来接收 Telegram 的真实时间戳
+def process_message_background(text, chat_id, msg_date=None):
     try:
         memory = fetch_memory()
         history = load_history()
@@ -283,10 +284,25 @@ def process_message_background(text, chat_id):
             reply = clean_reply
         else:
             send_telegram(reply)
-        now = datetime.now(timezone(timedelta(hours=11))).strftime("%Y-%m-%d %H:%M:%S")
-        history.append({"role": "user", "content": text, "timestamp": now})
-        history.append({"role": "assistant", "content": reply, "timestamp": now})
-        save_history(history)
+            
+        # 👇 师兄加料：精准计算时差感！
+        tz = ZoneInfo("Australia/Melbourne")
+        if msg_date:
+            user_time = datetime.fromtimestamp(msg_date, tz).strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            user_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+            
+        bot_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+        
+        new_user_record = {"role": "user", "content": text, "timestamp": user_time}
+        new_bot_record = {"role": "assistant", "content": reply, "timestamp": bot_time}
+        
+        # 重新加载最新记录，防止并发覆盖
+        latest_history = load_history()
+        latest_history.append(new_user_record)
+        latest_history.append(new_bot_record)
+        save_history(latest_history)
+        
     except Exception as e:
         import traceback
         print(f"[CRITICAL] 后台任务崩了: {e}")
@@ -313,9 +329,13 @@ def webhook():
     text = msg.get("text", "")
     if not text:
         return "ok"
+        
+    # 👇 师兄加料：截获你发消息的那一瞬间的真实时间戳
+    msg_date = msg.get("date")
     
     print(f"[DEBUG] 收到消息：{text}，立刻唤醒影分身处理！")
-    Thread(target=process_message_background, args=(text, chat_id)).start()
+    # 把真实时间戳喂给后台任务
+    Thread(target=process_message_background, args=(text, chat_id, msg_date)).start()
     
     return "ok"
 
