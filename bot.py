@@ -236,9 +236,9 @@ def send_telegram_voice(text):
             async def _tts():
                 voice = detect_voice(text)
                 if voice == VOICE_NAME_EN:
-                    communicate = edge_tts.Communicate(text, voice, rate="-15%", pitch="-10Hz")
+                    communicate = edge_tts.Communicate(text, voice, rate="-5%", pitch="-0Hz")
                 else:
-                    communicate = edge_tts.Communicate(text, voice, rate="-15%", pitch="-20Hz")
+                    communicate = edge_tts.Communicate(text, voice, rate="-5%", pitch="-0Hz")
                 await communicate.save(mp3_path)
             asyncio.run(_tts())
 
