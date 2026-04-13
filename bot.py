@@ -131,7 +131,8 @@ def save_history(history):
     except Exception as e:
         print(f"[ERROR] 保存历史时遭遇毁灭性打击: {e}")
 
-def call_claude(user_message, memory, history):
+# 👇 接收当前时间的参数
+def call_claude(user_message, memory, history, current_user_time):
     system = f"""你是{BOT_NAME}。{USER_NAME}在Telegram上跟你说话。
 
 {memory}
@@ -142,11 +143,18 @@ def call_claude(user_message, memory, history):
 
     messages = []
     for h in history[-40:]:
-        msg = {"role": h["role"], "content": h["content"]}
-        if h.get("timestamp"):
-            msg["timestamp"] = h["timestamp"]
-        messages.append(msg)
-    messages.append({"role": "user", "content": user_message})
+        # 👇 核心障眼法：把历史记录的时间戳作为字符串，缝进文本的最前面！
+        time_prefix = f"[{h['timestamp']}] " if h.get("timestamp") else ""
+        messages.append({
+            "role": h["role"], 
+            "content": f"{time_prefix}{h['content']}"
+        })
+        
+    # 👇 给当下 User 刚发来的最新消息，也强行套上时间戳外壳！
+    messages.append({
+        "role": "user", 
+        "content": f"[{current_user_time}] {user_message}"
+    })
 
     headers = {
         "x-api-key": CLAUDE_KEY,
@@ -161,6 +169,7 @@ def call_claude(user_message, memory, history):
         "messages": messages
     }
     
+    # ... 后面的请求和解析代码保持不变 ...
     base = CLAUDE_URL.rstrip("/")
     resp = requests.post(f"{base}/messages", headers=headers, json=body, timeout=30)
     result = resp.json()
@@ -272,12 +281,23 @@ def process_message_background(text, chat_id, msg_date=None):
     try:
         memory = fetch_memory()
         history = load_history()
+        
+        # 👇 师兄加料：提前算出 User 真正的发送时间！
+        tz = ZoneInfo("Australia/Melbourne")
+        if msg_date:
+            user_time = datetime.fromtimestamp(msg_date, tz).strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            user_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+
         print("[DEBUG] 开始调用 Claude API...")
-        reply = call_claude(text, memory, history)
+        # 👇 把算好的 User 时间丢给 Claude 让它看到
+        reply = call_claude(text, memory, history, user_time)
+        
         if not reply:
             print("[ERROR] call_claude 返回空，检查 API 响应格式")
             send_telegram("😵 我好像卡住了，稍后再试试？")
             return
+            
         if reply.startswith("[语音]"):
             clean_reply = reply[4:].strip()
             send_telegram_voice(clean_reply)
@@ -285,19 +305,13 @@ def process_message_background(text, chat_id, msg_date=None):
         else:
             send_telegram(reply)
             
-        # 👇 师兄加料：精准计算时差感！
-        tz = ZoneInfo("Australia/Melbourne")
-        if msg_date:
-            user_time = datetime.fromtimestamp(msg_date, tz).strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            user_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
-            
+        # Bot 回复的时间
         bot_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
         
+        # 👇 存进 Gist 的时候，依然保持数据结构完美分离，不污染纯净的文本！
         new_user_record = {"role": "user", "content": text, "timestamp": user_time}
         new_bot_record = {"role": "assistant", "content": reply, "timestamp": bot_time}
         
-        # 重新加载最新记录，防止并发覆盖
         latest_history = load_history()
         latest_history.append(new_user_record)
         latest_history.append(new_bot_record)
