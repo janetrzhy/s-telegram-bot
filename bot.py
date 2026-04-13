@@ -31,6 +31,9 @@ USER_NAME = os.environ.get("USER_NAME", "主人")
 PROMPT_RULES = os.environ.get("PROMPT_RULES", " 简短自然，像手机聊天。直接说话，不要加引号。")
 VOICE_NAME = os.environ.get("VOICE_NAME", "zh-CN-YunxiNeural")
 VOICE_NAME_EN = os.environ.get("VOICE_NAME_EN", "en-US-AndrewMultilingualNeural")
+MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
+MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "")
+MINIMAX_VOICE_ZH = os.environ.get("MINIMAX_VOICE_ZH", "")
 
 # ============ 核心函数 ============
 def fetch_memory():
@@ -182,6 +185,37 @@ def send_telegram(text):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     requests.post(url, json={"chat_id": TG_CHAT_ID, "text": text}, timeout=10)
 
+def _generate_minimax_audio(text, mp3_path, voice_id):
+    url = f"https://api.minimax.chat/v1/t2a_v2?GroupId={MINIMAX_GROUP_ID}"
+    headers = {
+        "Authorization": f"Bearer {MINIMAX_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    body = {
+        "model": "speech-01-hd",
+        "text": text,
+        "stream": False,
+        "voice_setting": {
+            "voice_id": voice_id,
+            "speed": 0.9,    # 刚才调好的语速
+            "pitch": 0,      # 微微上扬的音调
+            "vol": 1.0
+        },
+        "audio_setting": {
+            "sample_rate": 32000,
+            "bitrate": 128000,
+            "format": "mp3"
+        }
+    }
+    resp = requests.post(url, headers=headers, json=body, timeout=30)
+    result = resp.json()
+    status = result.get("base_resp", {}).get("status_code")
+    if status != 0:
+        raise Exception(f"MiniMax TTS 失败: {result.get('base_resp', {}).get('status_msg')}")
+    audio_hex = result["data"]["audio"]
+    with open(mp3_path, "wb") as f:
+        f.write(bytes.fromhex(audio_hex))
+
 def send_telegram_voice(text):
     mp3_path = None
     ogg_path = None
@@ -191,16 +225,24 @@ def send_telegram_voice(text):
         with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
             ogg_path = f.name
 
-        async def _tts():
-            voice = detect_voice(text)
-            if voice == VOICE_NAME_EN:
-                communicate = edge_tts.Communicate(text, voice, rate="-15%", pitch="-10Hz")
-            else:
-                communicate = edge_tts.Communicate(text, voice, rate="-15%", pitch="-20Hz")
-            await communicate.save(mp3_path)
+        # 判断是否为英文
+        is_english = detect_voice(text) == VOICE_NAME_EN
 
-        asyncio.run(_tts())
+        # 核心：如果不是英文，且配了 MiniMax，就走高品质的 MiniMax！
+        if not is_english and MINIMAX_API_KEY and MINIMAX_GROUP_ID and MINIMAX_VOICE_ZH:
+            _generate_minimax_audio(text, mp3_path, MINIMAX_VOICE_ZH)
+        else:
+            # 英文，或者没配 MiniMax，走原本的 edge_tts
+            async def _tts():
+                voice = detect_voice(text)
+                if voice == VOICE_NAME_EN:
+                    communicate = edge_tts.Communicate(text, voice, rate="-15%", pitch="-10Hz")
+                else:
+                    communicate = edge_tts.Communicate(text, voice, rate="-15%", pitch="-20Hz")
+                await communicate.save(mp3_path)
+            asyncio.run(_tts())
 
+        # 统一转成 OGG OPUS 骗过 Telegram
         audio = AudioSegment.from_mp3(mp3_path)
         audio.export(ogg_path, format="ogg", codec="libopus")
 
