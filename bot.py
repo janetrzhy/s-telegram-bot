@@ -191,22 +191,23 @@ def _generate_minimax_audio(text, mp3_path, voice_id):
         "Authorization": f"Bearer {MINIMAX_API_KEY}",
         "Content-Type": "application/json"
     }
+    
+    # 最纯净的原厂配置，把多余的控制变量全部干掉！
     body = {
-        "model": "speech-01-hd",
+        "model": "speech-01-hd",  # 必须确保用的是 HD 高清模型
         "text": text,
         "stream": False,
         "voice_setting": {
-            "voice_id": voice_id,
-            "speed": 1.0,    # 刚才调好的语速
-            "pitch": 0,      # 微微上扬的音调
-            "vol": 1.0
+            "voice_id": voice_id
+            # 删掉 speed, pitch, vol，让 MiniMax 用最原始的数据渲染
         },
         "audio_setting": {
-            "sample_rate": 32000,
-            "bitrate": 128000,
+            "sample_rate": 32000, # 采样率拉满
+            "bitrate": 128000,    # 码率拉满
             "format": "mp3"
         }
     }
+    
     resp = requests.post(url, headers=headers, json=body, timeout=30)
     result = resp.json()
     status = result.get("base_resp", {}).get("status_code")
