@@ -272,6 +272,9 @@ def process_message_background(text, chat_id, msg_date=None):
             send_telegram("😵 我好像卡住了，稍后再试试？")
             return
             
+        # 👇 师兄加料：暴力清洗！不管大模型有没有发疯加上 [202x-xx-xx ...] 这种时间戳，一律强行切掉！
+        reply = re.sub(r'^\[202\d-[^\]]+\]\s*', '', reply.strip())
+            
         if reply.startswith("[语音]"):
             clean_reply = reply[4:].strip()
             send_telegram_voice(clean_reply)
