@@ -26,6 +26,7 @@ GIST_TOKEN = os.environ.get("GIST_TOKEN", "")
 BOT_NAME = os.environ.get("BOT_NAME", "AI助手")
 USER_NAME = os.environ.get("USER_NAME", "主人")
 PROMPT_RULES = os.environ.get("PROMPT_RULES", " 简短自然，像手机聊天。直接说话，不要加引号。")
+EDGE_TTS_API_KEY = os.environ.get("EDGE_TTS_API_KEY", "")
 
 # 👇 发声器官配置
 VOICE_NAME = os.environ.get("VOICE_NAME", "zh-CN-YunxiNeural")
@@ -209,14 +210,24 @@ def _generate_minimax_audio(text, mp3_path, voice_id):
     with open(mp3_path, "wb") as f:
         f.write(bytes.fromhex(result["data"]["audio"]))
 
-# 👇 师兄加料：专属 Edge 纯 API 调用
+# 👇 专属 Edge 纯 API 调用（带钥匙破门版）
 def _generate_edge_audio(text, mp3_path):
     if not EDGE_TTS_URL:
         raise ValueError("EDGE_TTS_URL 没配置！")
     url = f"{EDGE_TTS_URL.rstrip('/')}/v1/audio/speech"
+    
     headers = {"Content-Type": "application/json"}
+    # 👇 如果配了钥匙，就在敲门的时候把它举起来！
+    if EDGE_TTS_API_KEY:
+        headers["Authorization"] = f"Bearer {EDGE_TTS_API_KEY}"
+        
     body = {"model": "tts-1", "input": text, "voice": VOICE_NAME_EN}
-    resp = requests.post(url, headers=headers, json=body, timeout=30)
+    resp = requests.post(url, headers=headers, json=body, timeout=60) # 顺手把耐心延长到60秒
+    
+    # 如果还是被拒绝，打印出错原因，不要瞎猜
+    if resp.status_code != 200:
+        print(f"🚨 Edge TTS 报错: 状态码 {resp.status_code}, 内容: {resp.text}")
+        
     resp.raise_for_status()
     with open(mp3_path, "wb") as f:
         f.write(resp.content)
