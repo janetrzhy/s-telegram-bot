@@ -224,10 +224,6 @@ def _generate_edge_audio(text, mp3_path):
     body = {"model": "tts-1", "input": text, "voice": VOICE_NAME_EN}
     resp = requests.post(url, headers=headers, json=body, timeout=60) # 顺手把耐心延长到60秒
     
-    # 如果还是被拒绝，打印出错原因，不要瞎猜
-    if resp.status_code != 200:
-        print(f"🚨 Edge TTS 报错: 状态码 {resp.status_code}, 内容: {resp.text}")
-        
     resp.raise_for_status()
     with open(mp3_path, "wb") as f:
         f.write(resp.content)
