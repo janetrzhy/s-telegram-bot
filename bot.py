@@ -319,7 +319,8 @@ def webhook():
     msg = data["message"]
     chat_id = str(msg.get("chat", {}).get("id", ""))
     
-    if chat_id != str(TG_CHAT_ID):
+    # 只要这个聊天的 ID 在我们允许的名单字符串里，就放行！
+    if chat_id not in str(TG_CHAT_ID):
         return "ok"
     
     text = msg.get("text", "")
