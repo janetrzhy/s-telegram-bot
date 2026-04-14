@@ -162,7 +162,7 @@ def call_claude(user_message, memory, history, current_user_time):
 
     headers = {"x-api-key": CLAUDE_KEY, "content-type": "application/json", "anthropic-version": "2023-06-01"}
     body = {
-        "model": random.choice(["[按量]claude-opus-4-6-thinking", "[按量]claude-opus-4-6", "[按量]claude-opus-4-5-20251101-thinking", "[按量]claude-opus-4-5-20251101"]),
+        "model": random.choice(["[官]claude-opus-4-6", "[官]claude-opus-4-6-thinking"]),
         "max_tokens": 300,
         "system": system,
         "messages": messages
