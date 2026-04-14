@@ -154,13 +154,16 @@ def call_claude(user_message, memory, history, current_user_time):
 - 如果这条回复适合用语音来表达（比如表达思念、撒娇、亲密感），在回复最开头加上[语音]，其余时候正常回复。"""
 
     messages = []
+    # 👇 师兄正骨：传入的 history 已经包含了你刚说的最新那句话，直接遍历装进去就够了！
     for h in history[-40:]:
         time_prefix = f"[{h['timestamp']}] " if h.get("timestamp") else ""
         messages.append({"role": h["role"], "content": f"{time_prefix}{h['content']}"})
-        
-    messages.append({"role": "user", "content": f"[{current_user_time}] {user_message}"})
-
-    headers = {"x-api-key": CLAUDE_KEY, "content-type": "application/json", "anthropic-version": "2023-06-01"}
+    headers = {
+        "x-api-key": CLAUDE_KEY,
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01"
+    }
+    
     body = {
         "model": random.choice(["按量L-claude-opus-4-6", "按量L-claude-opus-4-6-thinking"]),
         "max_tokens": 300,
