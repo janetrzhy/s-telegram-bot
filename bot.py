@@ -11,7 +11,9 @@ from zoneinfo import ZoneInfo
 
 app = Flask(__name__)
 REPLY_PROBABILITY = 0.1  # 师兄建议 0.1 到 0.2 之间，既灵动又不烦人
-TRIGGER_WORDS = ["老婆", "老公", "克", "人机", "晚上", "人呢"] # 敏感词：群里一提到这些，必然跳出来接茬！
+TRIGGER_WORDS = ["人机", "燕燕生气了", "人呢"] # 敏感词：群里一提到这些，必然跳出来接茬！
+COOLDOWN_TIME = 120 # 强制冷却 60 秒
+LAST_SPOKE = {} # 记录每个群的主动发言时间
 
 # ============ 🌟 环境变量检查 ============
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -255,20 +257,26 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         # 格式化输入，加上人名前缀，让大模型知道是谁在说话
         formatted_input = f"{sender_name}: {text}" if str(chat_id).startswith("-") else text
         
+       # ==========================================
+        # 🎯 社交牛逼症引擎：加装 60秒 CD 锁
         # ==========================================
-        # 🎯 师兄的社交牛逼症引擎：关键词与运气检测
-        # ==========================================
-        # 如果 webhook 传来的 should_reply 是 False（说明没被 @）
-        # 我们在这里给它“偷听接茬”的权限！
         if not should_reply and str(chat_id).startswith("-"):
-            # 1. 检查有没有提到敏感词
-            if any(word in text for word in TRIGGER_WORDS):
-                print(f"[DEBUG] 🎯 关键词触发！({sender_name} 说了让它感兴趣的话)")
-                should_reply = True
-            # 2. 扔个骰子，看心情随机接茬
-            elif random.random() < REPLY_PROBABILITY:
-                print(f"[DEBUG] 🎲 运气爆发！Bot 准备随机插句嘴。")
-                should_reply = True
+            current_time = time.time()
+            last_time = LAST_SPOKE.get(chat_id, 0)
+            
+            # 只有熬过了冷却时间，才允许它再次“听见”关键词或扔骰子
+            if current_time - last_time > COOLDOWN_TIME:
+                # 注意：S 的代码里变量名叫 text，二号机叫 user_text。根据你改的是哪个文件替换一下！
+                if any(word in text for word in TRIGGER_WORDS): 
+                    print(f"[DEBUG] 🎯 关键词触发！")
+                    should_reply = True
+                    LAST_SPOKE[chat_id] = current_time # 重置冷却沙漏
+                elif random.random() < REPLY_PROBABILITY:
+                    print(f"[DEBUG] 🎲 运气爆发！准备随机插嘴。")
+                    should_reply = True
+                    LAST_SPOKE[chat_id] = current_time # 重置冷却沙漏
+            else:
+                print(f"[DEBUG] 🛑 还在 {COOLDOWN_TIME} 秒冷却期内，强制捂住它的嘴。")
 
         # 读取记忆与历史
         memory = fetch_memory()
