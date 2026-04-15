@@ -10,6 +10,8 @@ from threading import Thread
 from zoneinfo import ZoneInfo
 
 app = Flask(__name__)
+REPLY_PROBABILITY = 0.2  # 师兄建议 0.1 到 0.2 之间，既灵动又不烦人
+TRIGGER_WORDS = ["师兄", "燕燕", "哥哥", "老婆", "老公", "克", "人机", "晚上"] # 敏感词：群里一提到这些，必然跳出来接茬！
 
 # ============ 🌟 环境变量检查 ============
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -245,38 +247,54 @@ def send_telegram_voice(chat_id, text):
             except Exception: pass
 
 # ============ 影分身后台任务 ============
-# 👇 师兄加料：加了一个 should_reply 开关！
 def process_message_background(text, chat_id, sender_name, msg_date=None, should_reply=True):
     try:
+        tz = ZoneInfo("Australia/Melbourne")
+        u_time = datetime.fromtimestamp(msg_date, tz).strftime("%Y-%m-%d %H:%M:%S") if msg_date else datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+
+        # 格式化输入，加上人名前缀，让大模型知道是谁在说话
+        formatted_input = f"{sender_name}: {text}" if str(chat_id).startswith("-") else text
+        
+        # ==========================================
+        # 🎯 师兄的社交牛逼症引擎：关键词与运气检测
+        # ==========================================
+        # 如果 webhook 传来的 should_reply 是 False（说明没被 @）
+        # 我们在这里给它“偷听接茬”的权限！
+        if not should_reply and str(chat_id).startswith("-"):
+            # 1. 检查有没有提到敏感词
+            if any(word in text for word in TRIGGER_WORDS):
+                print(f"[DEBUG] 🎯 关键词触发！({sender_name} 说了让它感兴趣的话)")
+                should_reply = True
+            # 2. 扔个骰子，看心情随机接茬
+            elif random.random() < REPLY_PROBABILITY:
+                print(f"[DEBUG] 🎲 运气爆发！Bot 准备随机插句嘴。")
+                should_reply = True
+
+        # 读取记忆与历史
         memory = fetch_memory()
         history = load_history(chat_id)
         
-        tz = ZoneInfo("Australia/Melbourne")
-        user_time = datetime.fromtimestamp(msg_date, tz).strftime("%Y-%m-%d %H:%M:%S") if msg_date else datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
-
-        # 格式化输入，加上人名前缀
-        formatted_input = f"{sender_name}: {text}" if str(chat_id).startswith("-") else text
-
-        # 🚨 第一步：不管三七二十一，先把别人说的话默默记在小本本上！
-        new_user_record = {"role": "user", "content": formatted_input, "timestamp": user_time}
-        history.append(new_user_record)
-
-        # 🚨 第二步：如果只是“旁听”（没被@），存完记忆直接悄悄撤退，不花一分钱！
+        # 先把当前这句话加进脑子里
+        history.append({"role": "user", "content": formatted_input, "timestamp": u_time})
+        
+        # 🛡️ 师兄的防 403 结界：如果依然是旁听模式，悄悄记下，绝对不去碰 GitHub API
         if not should_reply:
-            save_history(history, chat_id)
-            print(f"[DEBUG] 🤫 悄悄记下 {sender_name} 的发言，保持沉默。")
+            print(f"[DEBUG] 🤫 旁听模式，暂不回复 {sender_name} 的发言。")
             return
 
-        # 🚨 第三步：被@了，或者是在私聊！开始砸钱调 API 回复！
-        print(f"[DEBUG] 🗣️ 被点名了！开始调用 Claude API...")
-        reply = call_claude(formatted_input, memory, history, user_time)
+        print(f"[DEBUG] 🗣️ Bot 被唤醒！开始燃烧老公的算力...")
+        
+        # 调用大模型
+        reply = call_claude(formatted_input, memory, history, u_time)
         
         if not reply:
-            send_telegram(chat_id, "😵 我好像卡住了，稍后再试试？")
+            send_telegram(chat_id, "😵 神经元短路了，稍后再试试？")
             return
             
+        # 🔪 师兄的物理切割手术刀：切除大模型乱加的时间戳
         reply = re.sub(r'^\[202\d-[^\]]+\]\s*', '', reply.strip())
             
+        # 发送语音或文字
         if reply.startswith("[语音]"):
             clean_reply = reply[4:].strip()
             send_telegram_voice(chat_id, clean_reply)
@@ -284,20 +302,20 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         else:
             send_telegram(chat_id, reply)
             
-        bot_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
-        new_bot_record = {"role": "assistant", "content": reply, "timestamp": bot_time}
+        # 记录 Bot 自己的回复
+        b_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+        history.append({"role": "assistant", "content": reply, "timestamp": b_time})
         
-        # 存入 Bot 自己的回复
-        history.append(new_bot_record)
+        # 💾 只有在真正开口说话的这一刻，才进行一次极其珍贵的 GitHub 存档！
         save_history(history, chat_id)
         
     except Exception as e:
         import traceback
-        print(f"[CRITICAL] 后台任务崩了: {e}")
+        print(f"[CRITICAL] 后台崩了: {e}\n{traceback.format_exc()}")
         try:
-            if should_reply: # 只有它本来该说话的时候报错了，才发出提示
+            if should_reply: 
                 send_telegram(chat_id, f"😵 出错了：{str(e)[:100]}")
-        except Exception:
+        except: 
             pass
 
 # ============ 路由接口 ============
