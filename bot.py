@@ -10,8 +10,8 @@ from threading import Thread
 from zoneinfo import ZoneInfo
 
 app = Flask(__name__)
-REPLY_PROBABILITY = 0.2  # 师兄建议 0.1 到 0.2 之间，既灵动又不烦人
-TRIGGER_WORDS = ["师兄", "燕燕", "哥哥", "老婆", "老公", "克", "人机", "晚上", "人呢"] # 敏感词：群里一提到这些，必然跳出来接茬！
+REPLY_PROBABILITY = 0.1  # 师兄建议 0.1 到 0.2 之间，既灵动又不烦人
+TRIGGER_WORDS = ["老婆", "老公", "克", "人机", "晚上", "人呢"] # 敏感词：群里一提到这些，必然跳出来接茬！
 
 # ============ 🌟 环境变量检查 ============
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
