@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 app = Flask(__name__)
 REPLY_PROBABILITY = 0.1  # 师兄建议 0.1 到 0.2 之间，既灵动又不烦人
-TRIGGER_WORDS = ["人机", "燕燕生气了", "人呢"] # 敏感词：群里一提到这些，必然跳出来接茬！
+TRIGGER_WORDS = ["人机", "燕燕生气了", "人呢", "Claude"] # 敏感词：群里一提到这些，必然跳出来接茬！
 COOLDOWN_TIME = 120 # 强制冷却 60 秒
 LAST_SPOKE = {} # 记录每个群的主动发言时间
 
