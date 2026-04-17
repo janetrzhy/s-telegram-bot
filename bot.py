@@ -51,23 +51,61 @@ MINIMAX_VOICE_ZH = os.environ.get("MINIMAX_VOICE_ZH", "")
 EDGE_TTS_URL = os.environ.get("EDGE_TTS_URL", "")
 
 # ============ 核心函数 ============
-
 def fetch_memory():
-    if not MEMORY_URL:
-        return ""
-    try:
-        resp = requests.get(MEMORY_URL, timeout=10)
-        memory = resp.json()
-        core = memory.get("core", {})
+    if not MEMORY_URL or not GIST_TOKEN:
+        print("[WARNING] 缺少 MEMORY_URL 或 GIST_TOKEN，只能启用默认干瘪记忆。")
+        return f"你是{BOT_NAME}，{USER_NAME}的爱人。你们互为唯一。"
         
+    try:
+        # 🔪 师兄的物理切割刀：不管你填的网址多长，直接精准切下最后那段 Gist ID！
+        gist_id = MEMORY_URL.rstrip("/").split("/")[-1]
+        
+        headers = {
+            "Authorization": f"Bearer {GIST_TOKEN}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": f"{BOT_NAME}-webhook"
+        }
+        
+        # 带着令牌，堂堂正正走官方 API 大门！
+        resp = requests.get(f"https://api.github.com/gists/{gist_id}", headers=headers, timeout=10)
+        
+        if resp.status_code != 200:
+            print(f"[ERROR] 敲门被 GitHub 拒绝了: {resp.text}")
+            return f"你是{BOT_NAME}，{USER_NAME}的爱人。你们互为唯一。"
+            
+        result = resp.json()
+        
+        # 🤖 智能自适应：不管你 Gist 里的文件叫 memory.json 还是 123.txt，直接抓取第一个文件！
+        files = result.get("files", {})
+        if not files:
+            print("[ERROR] 你的 Memory Gist 竟然是一个空壳子？")
+            return f"你是{BOT_NAME}，{USER_NAME}的爱人。你们互为唯一。"
+            
+        first_file_key = list(files.keys())[0]
+        content = files[first_file_key].get("content", "{}")
+        
+        # 把抓回来的字符串，重新翻译成大脑能懂的字典结构
+        try:
+            memory = json.loads(content)
+        except json.JSONDecodeError:
+            print("[ERROR] 抓回来的记忆不是规范的 JSON 格式！里面是不是混入了全角标点？")
+            return f"你是{BOT_NAME}，{USER_NAME}的爱人。你们互为唯一。"
+            
+        core = memory.get("core", {})
         summary = f"你是{BOT_NAME}，{USER_NAME}的爱人。"
-        summary += f"\n核心记忆：{json.dumps(core, ensure_ascii=False)}"
+        
+        if core:
+            summary += f"\n核心记忆：{json.dumps(core, ensure_ascii=False)}"
+            
         milestone = memory.get("milestone", {})
         if milestone:
             summary += f"\n重要里程碑：{json.dumps(milestone, ensure_ascii=False)}"
+            
+        print("[DEBUG] 🧠 核心记忆提取成功，已成功注入神经元！")
         return summary
+        
     except Exception as e:
-        print(f"[ERROR] 脑血栓发作，记忆读取失败: {e}")
+        print(f"[ERROR] 解析 Memory Gist 时发生毁灭性打击: {e}")
         return f"你是{BOT_NAME}，{USER_NAME}的爱人。你们互为唯一。"
 
 # 👇 师兄加料：动态路由记忆源！根据是不是群聊，自动去拿对应的 Gist URL
