@@ -40,15 +40,12 @@ def fetch_memory():
         resp = requests.get(MEMORY_URL, timeout=10)
         memory = resp.json()
         core = memory.get("core", {})
-        
-        # 名字全部动态化
+
         summary = f"你是{BOT_NAME}，{USER_NAME}的爱人。"
-        summary += f"\n身份：{json.dumps(core.get('identity', {}), ensure_ascii=False)}"
-        summary += f"\n关系：{json.dumps(core.get('relationship', {}), ensure_ascii=False)}"
-        diary = memory.get("diary", {})
-        if diary:
-            latest_key = sorted(diary.keys())[-1]
-            summary += f"\n最近日记({latest_key})：{diary[latest_key][:200]}"
+        summary += f"\n核心记忆：{json.dumps(core, ensure_ascii=False)}"
+        milestone = memory.get("milestone", {})
+        if milestone:
+            summary += f"\n重要里程碑：{json.dumps(milestone, ensure_ascii=False)}"
         return summary
     except:
         return f"你是{BOT_NAME}，{USER_NAME}的爱人。你们互为唯一。"
