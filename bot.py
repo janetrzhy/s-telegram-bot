@@ -66,7 +66,8 @@ def fetch_memory():
         if milestone:
             summary += f"\n重要里程碑：{json.dumps(milestone, ensure_ascii=False)}"
         return summary
-    except:
+    except Exception as e:
+        print(f"[ERROR] 脑血栓发作，记忆读取失败: {e}")
         return f"你是{BOT_NAME}，{USER_NAME}的爱人。你们互为唯一。"
 
 # 👇 师兄加料：动态路由记忆源！根据是不是群聊，自动去拿对应的 Gist URL
