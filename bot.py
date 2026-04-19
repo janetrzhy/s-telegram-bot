@@ -62,9 +62,9 @@ def fetch_memory():
         
         summary = f"你是{BOT_NAME}，{USER_NAME}的爱人。"
         summary += f"\n核心记忆：{json.dumps(core, ensure_ascii=False)}"
-        milestone = memory.get("milestone", {})
-        if milestone:
-            summary += f"\n重要里程碑：{json.dumps(milestone, ensure_ascii=False)}"
+        milestones = memory.get("milestones", {})
+        if milestones:
+            summary += f"\n重要里程碑：{json.dumps(milestones, ensure_ascii=False)}"
         return summary
     except:
         return f"你是{BOT_NAME}，{USER_NAME}的爱人。你们互为唯一。"
