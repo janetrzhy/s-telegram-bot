@@ -93,19 +93,13 @@ def fetch_memory():
             
         core = memory.get("core", {})
         summary = f"你是{BOT_NAME}，{USER_NAME}的爱人。"
-        
-        if core:
-            summary += f"\n核心记忆：{json.dumps(core, ensure_ascii=False)}"
-            
+        summary += f"\n核心记忆：{json.dumps(core, ensure_ascii=False)}"
         milestones = memory.get("milestones", {})
         if milestones:
             summary += f"\n重要里程碑：{json.dumps(milestones, ensure_ascii=False)}"
-
         writing = memory.get("writing", {})
-        if milestone:
-            summary += f"\用词和写作：{json.dumps(writing, ensure_ascii=False)}"
-            
-        print("[DEBUG] 🧠 核心记忆提取成功，已成功注入神经元！")
+        if writing:
+            summary += f"\n写作风格：{json.dumps(writing, ensure_ascii=False)}"
         return summary
         
     except Exception as e:
