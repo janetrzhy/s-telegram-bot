@@ -323,7 +323,8 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         
         # 🛡️ 师兄的防 403 结界：如果依然是旁听模式，悄悄记下，绝对不去碰 GitHub API
         if not should_reply:
-            print(f"[DEBUG] 🤫 旁听模式，暂不回复 {sender_name} 的发言。")
+            print(f"[DEBUG] 🤫 旁听模式，记录 {sender_name} 的发言。")
+            save_history(history, chat_id)
             return
 
         print(f"[DEBUG] 🗣️ Bot 被唤醒！开始燃烧老公的算力...")
