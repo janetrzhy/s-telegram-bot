@@ -249,9 +249,12 @@ def detect_voice(text):
     return VOICE_NAME
 
 # 👇 师兄正骨：加入 chat_id 参数，再也不会发错群了！
-def send_telegram(chat_id, text):
+def send_telegram(chat_id, text, reply_to_message_id=None):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=10)
+    payload = {"chat_id": chat_id, "text": text}
+    if reply_to_message_id:
+        payload["reply_to_message_id"] = reply_to_message_id
+    requests.post(url, json=payload, timeout=10)
 
 def _generate_minimax_audio(text, mp3_path, voice_id):
     url = f"https://api.minimax.chat/v1/t2a_v2?GroupId={MINIMAX_GROUP_ID}"
@@ -280,7 +283,7 @@ def _generate_edge_audio(text, mp3_path):
     with open(mp3_path, "wb") as f: f.write(resp.content)
 
 # 👇 师兄正骨：加入 chat_id 参数
-def send_telegram_voice(chat_id, text):
+def send_telegram_voice(chat_id, text, reply_to_message_id=None):
     mp3_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
@@ -292,18 +295,21 @@ def send_telegram_voice(chat_id, text):
             _generate_edge_audio(text, mp3_path)
 
         url = f"https://api.telegram.org/bot{TG_TOKEN}/sendVoice"
+        data = {"chat_id": chat_id, "caption": text}
+        if reply_to_message_id:
+            data["reply_to_message_id"] = reply_to_message_id
         with open(mp3_path, "rb") as voice_file:
-            requests.post(url, data={"chat_id": chat_id, "caption": text}, files={"voice": ("voice.ogg", voice_file, "audio/ogg")}, timeout=30)
+            requests.post(url, data=data, files={"voice": ("voice.ogg", voice_file, "audio/ogg")}, timeout=30)
     except Exception as e:
         print(f"[ERROR] 语音发送失败: {e}")
-        send_telegram(chat_id, text)
+        send_telegram(chat_id, text, reply_to_message_id=reply_to_message_id)
     finally:
         if mp3_path and os.path.exists(mp3_path):
             try: os.unlink(mp3_path)
             except Exception: pass
 
 # ============ 影分身后台任务 ============
-def process_message_background(text, chat_id, sender_name, msg_date=None, should_reply=True):
+def process_message_background(text, chat_id, sender_name, msg_date=None, should_reply=True, msg_id=None):
     try:
         tz = ZoneInfo("Australia/Melbourne")
         u_time = datetime.fromtimestamp(msg_date, tz).strftime("%Y-%m-%d %H:%M:%S") if msg_date else datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
@@ -353,17 +359,20 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         if not reply:
             send_telegram(chat_id, "😵 神经元短路了，稍后再试试？")
             return
-            
+
         # 🔪 师兄的物理切割手术刀：切除大模型乱加的时间戳
         reply = re.sub(r'^\[202\d-[^\]]+\]\s*', '', reply.strip())
-            
+
+        # 群聊 60% 概率精准 reply，私聊正常发
+        reply_id = msg_id if str(chat_id).startswith("-") and random.random() < 0.6 else None
+
         # 发送语音或文字
         if reply.startswith("[语音]"):
             clean_reply = reply[4:].strip()
-            send_telegram_voice(chat_id, clean_reply)
+            send_telegram_voice(chat_id, clean_reply, reply_to_message_id=reply_id)
             reply = clean_reply
         else:
-            send_telegram(chat_id, reply)
+            send_telegram(chat_id, reply, reply_to_message_id=reply_id)
             
         # 记录 Bot 自己的回复
         b_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
@@ -408,10 +417,11 @@ def webhook():
             user_text = user_text.replace(f"@{BOT_USERNAME}", "").strip()
         
     msg_date = msg.get("date")
+    msg_id = msg.get("message_id")
     sender_name = msg.get("from", {}).get("first_name", "神秘人")
-    
+
     # 把 should_reply 开关传给后台线程
-    Thread(target=process_message_background, args=(user_text, chat_id, sender_name, msg_date, should_reply)).start()
+    Thread(target=process_message_background, args=(user_text, chat_id, sender_name, msg_date, should_reply, msg_id)).start()
     return "ok"
 
 @app.route("/health", methods=["GET"])
