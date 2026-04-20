@@ -242,6 +242,7 @@ def call_claude(user_message, memory, history, current_user_time):
                 return re.sub(r'\n{2,}', '\n', block["text"].strip())
     elif "choices" in result:
         return re.sub(r'\n{2,}', '\n', result["choices"][0]["message"]["content"].strip())
+    print(f"[ERROR] Claude API 返回异常: {result}")
     return None
 
 def detect_voice(text):
@@ -257,7 +258,11 @@ def send_telegram(chat_id, text, reply_to_message_id=None):
     payload = {"chat_id": chat_id, "text": text}
     if reply_to_message_id:
         payload["reply_to_message_id"] = reply_to_message_id
-    requests.post(url, json=payload, timeout=10)
+    resp = requests.post(url, json=payload, timeout=10)
+    result = resp.json()
+    if not result.get("ok") and reply_to_message_id:
+        print(f"[DEBUG] reply 失败({result.get('description')})，降级为普通发送")
+        requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=10)
 
 def _generate_minimax_audio(text, mp3_path, voice_id):
     url = f"https://api.minimax.chat/v1/t2a_v2?GroupId={MINIMAX_GROUP_ID}"
