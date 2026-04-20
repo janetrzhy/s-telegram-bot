@@ -363,8 +363,8 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         # 🔪 师兄的物理切割手术刀：切除大模型乱加的时间戳
         reply = re.sub(r'^\[202\d-[^\]]+\]\s*', '', reply.strip())
 
-        # 群聊精准 reply，私聊正常发
-        reply_id = msg_id if str(chat_id).startswith("-") else None
+        # 群聊 60% 概率精准 reply，私聊正常发
+        reply_id = msg_id if str(chat_id).startswith("-") and random.random() < 0.6 else None
 
         # 发送语音或文字
         if reply.startswith("[语音]"):
