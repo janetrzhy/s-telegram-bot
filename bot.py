@@ -68,7 +68,7 @@ def self_heal_webhook():
         pending = result.get("pending_update_count", 0)
         last_error = result.get("last_error_date", 0)
         webhook_url = result.get("url", "")
-        if pending > 5 and now - last_error < 86400 and webhook_url:
+        if pending > 20 and now - last_error < 86400 and webhook_url:
             print(f"[INFO] 🩹 webhook 自愈：{pending} 条积压，重置中...")
             requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=10)
             requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/setWebhook?url={webhook_url}", timeout=10)
