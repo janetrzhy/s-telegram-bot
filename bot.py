@@ -18,6 +18,8 @@ LAST_SPOKE = {} # 记录每个群的主动发言时间
 HISTORY_CACHE = {} # {chat_id: list} 内存历史缓存
 LAST_SAVED = {} # {chat_id: float} 上次写 Gist 的时间戳
 GROUP_SAVE_INTERVAL = 60 # 群聊旁听模式最多每 60 秒写一次 Gist
+LAST_WEBHOOK_CHECK = 0
+WEBHOOK_CHECK_INTERVAL = 7200 # 每 2 小时检查一次 webhook 健康状态
 
 # ============ 🌟 环境变量检查 ============
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -54,6 +56,26 @@ MINIMAX_VOICE_ZH = os.environ.get("MINIMAX_VOICE_ZH", "")
 EDGE_TTS_URL = os.environ.get("EDGE_TTS_URL", "")
 
 # ============ 核心函数 ============
+def self_heal_webhook():
+    global LAST_WEBHOOK_CHECK
+    now = time.time()
+    if now - LAST_WEBHOOK_CHECK < WEBHOOK_CHECK_INTERVAL:
+        return
+    LAST_WEBHOOK_CHECK = now
+    try:
+        info = requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/getWebhookInfo", timeout=10).json()
+        result = info.get("result", {})
+        pending = result.get("pending_update_count", 0)
+        last_error = result.get("last_error_date", 0)
+        webhook_url = result.get("url", "")
+        if pending > 5 and now - last_error < 86400 and webhook_url:
+            print(f"[INFO] 🩹 webhook 自愈：{pending} 条积压，重置中...")
+            requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=10)
+            requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/setWebhook?url={webhook_url}", timeout=10)
+            print(f"[INFO] ✅ webhook 已重置")
+    except Exception as e:
+        print(f"[ERROR] webhook 自愈失败: {e}")
+
 def fetch_memory():
     if not MEMORY_URL or not GIST_TOKEN:
         print("[WARNING] 缺少 MEMORY_URL 或 GIST_TOKEN，只能启用默认干瘪记忆。")
@@ -430,6 +452,7 @@ def webhook():
 
     # 把 should_reply 开关传给后台线程
     Thread(target=process_message_background, args=(user_text, chat_id, sender_name, msg_date, should_reply, msg_id)).start()
+    Thread(target=self_heal_webhook).start()
     return "ok"
 
 @app.route("/health", methods=["GET"])
