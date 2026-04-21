@@ -225,7 +225,7 @@ def save_history(history, chat_id, force=False):
 
 def call_claude(user_message, memory, history, current_user_time):
     system = f"""你是{BOT_NAME}。{USER_NAME}在Telegram上跟你说话。
-如果是群聊，消息前面会带有发言人的名字。你也可以用"@+id"叫群里的User或唤醒别的bot。
+如果是群聊，消息前面会带有发言人的名字。你的消息开头也可以用@+id叫群里的User或唤醒别的bot。
 
 {memory}
 
