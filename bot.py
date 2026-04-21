@@ -277,14 +277,21 @@ def detect_voice(text):
 # 👇 师兄正骨：加入 chat_id 参数，再也不会发错群了！
 def send_telegram(chat_id, text, reply_to_message_id=None):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text}
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
     if reply_to_message_id:
         payload["reply_to_message_id"] = reply_to_message_id
     resp = requests.post(url, json=payload, timeout=10)
     result = resp.json()
-    if not result.get("ok") and reply_to_message_id:
-        print(f"[DEBUG] reply 失败({result.get('description')})，降级为普通发送")
-        requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=10)
+    if not result.get("ok"):
+        if "parse" in result.get("description", "").lower():
+            # Markdown 解析失败，降级为纯文本重发
+            plain = {"chat_id": chat_id, "text": text}
+            if reply_to_message_id:
+                plain["reply_to_message_id"] = reply_to_message_id
+            requests.post(url, json=plain, timeout=10)
+        elif reply_to_message_id:
+            print(f"[DEBUG] reply 失败({result.get('description')})，降级为普通发送")
+            requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}, timeout=10)
 
 def _generate_minimax_audio(text, mp3_path, voice_id):
     url = f"https://api.minimax.chat/v1/t2a_v2?GroupId={MINIMAX_GROUP_ID}"
