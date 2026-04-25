@@ -487,9 +487,9 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         # 群聊 60% 概率精准 reply，私聊正常发
         reply_id = msg_id if str(chat_id).startswith("-") and random.random() < 0.6 else None
 
-        # 发送语音或文字：用户发语音 → 强制语音回；否则按 [语音] 前缀决定
-        if is_voice or reply.startswith("[语音]"):
-            clean_reply = reply[4:].strip() if reply.startswith("[语音]") else reply
+        # 发送语音或文字：交给模型用 [语音] 前缀决定
+        if reply.startswith("[语音]"):
+            clean_reply = reply[4:].strip()
             send_telegram_voice(chat_id, clean_reply, reply_to_message_id=reply_id)
             reply = clean_reply
         else:
