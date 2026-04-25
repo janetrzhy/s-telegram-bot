@@ -51,6 +51,7 @@ EDGE_TTS_API_KEY = os.environ.get("EDGE_TTS_API_KEY", "")
 # 发声器官配置
 VOICE_NAME = os.environ.get("VOICE_NAME", "zh-CN-YunxiNeural")
 VOICE_NAME_EN = os.environ.get("VOICE_NAME_EN", "en-US-AndrewMultilingualNeural")
+TTS_EN_MODEL = os.environ.get("TTS_EN_MODEL", "tts-1")
 MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
 MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "")
 MINIMAX_VOICE_ZH = os.environ.get("MINIMAX_VOICE_ZH", "")
@@ -325,9 +326,15 @@ def transcribe_voice(audio_bytes, mime="audio/ogg"):
         files = {"file": ("voice.ogg", audio_bytes, mime)}
         data = {"model": WHISPER_MODEL}
         resp = requests.post(url, headers=headers, files=files, data=data, timeout=60)
+        if resp.status_code != 200:
+            print(f"[ERROR] Whisper {resp.status_code}: {resp.text[:300]}")
+            return None
         result = resp.json()
         text = (result.get("text") or "").strip()
-        return text or None
+        if not text:
+            print(f"[ERROR] Whisper 返回空文本: {result}")
+            return None
+        return text
     except Exception as e:
         print(f"[ERROR] 转写失败: {e}")
         return None
@@ -372,7 +379,7 @@ def _generate_edge_audio(text, mp3_path):
     headers = {"Content-Type": "application/json"}
     if EDGE_TTS_API_KEY:
         headers["Authorization"] = f"Bearer {EDGE_TTS_API_KEY}"
-    body = {"model": "tts-1", "input": text, "voice": VOICE_NAME_EN}
+    body = {"model": TTS_EN_MODEL, "input": text, "voice": VOICE_NAME_EN, "response_format": "mp3"}
     resp = requests.post(url, headers=headers, json=body, timeout=60)
     resp.raise_for_status()
     with open(mp3_path, "wb") as f: f.write(resp.content)
@@ -480,9 +487,9 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         # 群聊 60% 概率精准 reply，私聊正常发
         reply_id = msg_id if str(chat_id).startswith("-") and random.random() < 0.6 else None
 
-        # 发送语音或文字：用户发语音 → 强制语音回；否则按 [语音] 前缀决定
-        if is_voice or reply.startswith("[语音]"):
-            clean_reply = reply[4:].strip() if reply.startswith("[语音]") else reply
+        # 发送语音或文字：交给模型用 [语音] 前缀决定
+        if reply.startswith("[语音]"):
+            clean_reply = reply[4:].strip()
             send_telegram_voice(chat_id, clean_reply, reply_to_message_id=reply_id)
             reply = clean_reply
         else:
