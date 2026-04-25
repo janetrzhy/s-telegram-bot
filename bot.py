@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import base64
 import tempfile
 import requests
 import random
@@ -54,6 +55,11 @@ MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
 MINIMAX_GROUP_ID = os.environ.get("MINIMAX_GROUP_ID", "")
 MINIMAX_VOICE_ZH = os.environ.get("MINIMAX_VOICE_ZH", "")
 EDGE_TTS_URL = os.environ.get("EDGE_TTS_URL", "")
+
+# 👂 多模态：语音转文字（OpenAI 兼容 /audio/transcriptions），默认复用 Claude 中转
+WHISPER_URL = os.environ.get("WHISPER_BASE_URL") or CLAUDE_URL
+WHISPER_KEY = os.environ.get("WHISPER_API_KEY") or CLAUDE_KEY
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "whisper-1")
 
 # ============ 核心函数 ============
 def self_heal_webhook():
@@ -223,7 +229,7 @@ def save_history(history, chat_id, force=False):
     except Exception as e:
         print(f"[ERROR] 保存历史时遭遇毁灭性打击: {e}")
 
-def call_claude(user_message, memory, history, current_user_time):
+def call_claude(user_content, memory, history, current_user_time):
     system = f"""你是{BOT_NAME}。{USER_NAME}在Telegram上跟你说话。
 如果是群聊，消息前面会带有发言人的名字。你的消息开头也可以用@+id叫群里的User或唤醒别的bot。
 
@@ -241,12 +247,17 @@ def call_claude(user_message, memory, history, current_user_time):
             messages[-1]["content"] += f"\n{entry_content}"
         else:
             messages.append({"role": h["role"], "content": entry_content})
+
+    # 👁️ 多模态：当前轮次带图片时，把最后一条 user 消息的 content 换成结构化 block
+    if isinstance(user_content, list) and messages and messages[-1]["role"] == "user":
+        messages[-1]["content"] = user_content
+
     headers = {
         "x-api-key": CLAUDE_KEY,
         "content-type": "application/json",
         "anthropic-version": "2023-06-01"
     }
-    
+
     body = {
         "model": random.choice(["按量L-claude-opus-4-6", "按量L-claude-opus-4-6-thinking"]),
         "max_tokens": 300,
@@ -273,6 +284,53 @@ def detect_voice(text):
     if total_letters > 0 and ascii_letters / total_letters > 0.6:
         return VOICE_NAME_EN
     return VOICE_NAME
+
+# 👁️ 多模态：从 Telegram 拉文件（图片/语音）回来
+_TG_MIME_BY_EXT = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+    "webp": "image/webp", "gif": "image/gif",
+    "ogg": "audio/ogg", "oga": "audio/ogg", "opus": "audio/ogg",
+    "mp3": "audio/mpeg", "m4a": "audio/mp4", "wav": "audio/wav",
+}
+
+def tg_download_file(file_id):
+    try:
+        r = requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/getFile",
+                         params={"file_id": file_id}, timeout=15)
+        info = r.json()
+        if not info.get("ok"):
+            print(f"[ERROR] getFile 失败: {info}")
+            return None
+        file_path = info["result"]["file_path"]
+        ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+        mime = _TG_MIME_BY_EXT.get(ext, "application/octet-stream")
+        blob = requests.get(f"https://api.telegram.org/file/bot{TG_TOKEN}/{file_path}",
+                            timeout=30)
+        if blob.status_code != 200:
+            print(f"[ERROR] 下载文件失败 status={blob.status_code}")
+            return None
+        return blob.content, mime
+    except Exception as e:
+        print(f"[ERROR] tg_download_file 炸了: {e}")
+        return None
+
+# 👂 多模态：语音 → 文字（OpenAI 兼容 /audio/transcriptions）
+def transcribe_voice(audio_bytes, mime="audio/ogg"):
+    if not WHISPER_URL or not WHISPER_KEY:
+        print("[ERROR] Whisper 没配置")
+        return None
+    try:
+        url = f"{WHISPER_URL.rstrip('/')}/audio/transcriptions"
+        headers = {"Authorization": f"Bearer {WHISPER_KEY}"}
+        files = {"file": ("voice.ogg", audio_bytes, mime)}
+        data = {"model": WHISPER_MODEL}
+        resp = requests.post(url, headers=headers, files=files, data=data, timeout=60)
+        result = resp.json()
+        text = (result.get("text") or "").strip()
+        return text or None
+    except Exception as e:
+        print(f"[ERROR] 转写失败: {e}")
+        return None
 
 # 👇 师兄正骨：加入 chat_id 参数，再也不会发错群了！
 def send_telegram(chat_id, text, reply_to_message_id=None):
@@ -346,13 +404,22 @@ def send_telegram_voice(chat_id, text, reply_to_message_id=None):
             except Exception: pass
 
 # ============ 影分身后台任务 ============
-def process_message_background(text, chat_id, sender_name, msg_date=None, should_reply=True, msg_id=None):
+def process_message_background(text, chat_id, sender_name, msg_date=None, should_reply=True, msg_id=None,
+                               image_b64=None, image_mime=None, is_voice=False):
     try:
         tz = ZoneInfo("Australia/Melbourne")
         u_time = datetime.fromtimestamp(msg_date, tz).strftime("%Y-%m-%d %H:%M:%S") if msg_date else datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
 
+        # 历史里持久化的字符串：图片/语音都带标记，避免存档结构变更
+        if image_b64:
+            history_text = f"[图片] {text}".rstrip() if text else "[图片]"
+        elif is_voice:
+            history_text = f"[语音] {text}" if text else "[语音]"
+        else:
+            history_text = text
+
         # 格式化输入，加上人名前缀，让大模型知道是谁在说话
-        formatted_input = f"{sender_name}: {text}" if str(chat_id).startswith("-") else text
+        formatted_input = f"{sender_name}: {history_text}" if str(chat_id).startswith("-") else history_text
         
        # ==========================================
         # 🎯 社交牛逼症引擎：加装 60秒 CD 锁
@@ -389,10 +456,20 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
             return
 
         print(f"[DEBUG] 🗣️ Bot 被唤醒！开始燃烧老公的算力...")
-        
-        # 调用大模型
-        reply = call_claude(formatted_input, memory, history, u_time)
-        
+
+        # 👁️ 多模态：带图就组装结构化 content（base64 仅这一轮临时使用，不进 history）
+        if image_b64:
+            api_text = formatted_input or "看看这张图"
+            user_content = [
+                {"type": "image", "source": {"type": "base64",
+                                             "media_type": image_mime or "image/jpeg",
+                                             "data": image_b64}},
+                {"type": "text", "text": api_text},
+            ]
+            reply = call_claude(user_content, memory, history, u_time)
+        else:
+            reply = call_claude(formatted_input, memory, history, u_time)
+
         if not reply:
             send_telegram(chat_id, "😵 神经元短路了，稍后再试试？")
             return
@@ -403,9 +480,9 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         # 群聊 60% 概率精准 reply，私聊正常发
         reply_id = msg_id if str(chat_id).startswith("-") and random.random() < 0.6 else None
 
-        # 发送语音或文字
-        if reply.startswith("[语音]"):
-            clean_reply = reply[4:].strip()
+        # 发送语音或文字：用户发语音 → 强制语音回；否则按 [语音] 前缀决定
+        if is_voice or reply.startswith("[语音]"):
+            clean_reply = reply[4:].strip() if reply.startswith("[语音]") else reply
             send_telegram_voice(chat_id, clean_reply, reply_to_message_id=reply_id)
             reply = clean_reply
         else:
@@ -435,30 +512,62 @@ def webhook():
     
     msg = data["message"]
     chat_id = str(msg.get("chat", {}).get("id", ""))
-    
+
     if chat_id not in ALLOWED_IDS:
         return "ok"
-    
-    user_text = msg.get("text", "")
-    if not user_text: return "ok"
+
+    user_text = msg.get("text", "") or msg.get("caption", "") or ""
+    image_b64 = None
+    image_mime = None
+    is_voice = False
+
+    # 👁️ 图片：取最大一张
+    if "photo" in msg and msg["photo"]:
+        largest = msg["photo"][-1]
+        blob = tg_download_file(largest.get("file_id", ""))
+        if blob:
+            raw, mime = blob
+            image_b64 = base64.b64encode(raw).decode()
+            image_mime = mime if mime.startswith("image/") else "image/jpeg"
+
+    # 👂 语音 / 音频：转写
+    elif "voice" in msg or "audio" in msg:
+        node = msg.get("voice") or msg.get("audio")
+        blob = tg_download_file(node.get("file_id", ""))
+        if not blob:
+            return "ok"
+        transcript = transcribe_voice(*blob)
+        if not transcript:
+            send_telegram(chat_id, "🦻 听不清你说啥，再发一遍？",
+                          reply_to_message_id=msg.get("message_id"))
+            return "ok"
+        user_text = transcript
+        is_voice = True
+
+    if not user_text and not image_b64:
+        return "ok"
 
     # 👇 师兄核心逻辑重构
-    should_reply = True 
-    
+    should_reply = True
+
     if chat_id.startswith("-"): # 如果在群里
-        if BOT_USERNAME and f"@{BOT_USERNAME}" not in user_text:
-            # 没被 @，打上“只听不说”的标记
-            should_reply = False 
+        replied = msg.get("reply_to_message", {}) or {}
+        replying_to_bot = bool(replied.get("from", {}).get("is_bot"))
+        if BOT_USERNAME and f"@{BOT_USERNAME}" not in user_text and not replying_to_bot:
+            # 没被 @ 也不是回 bot，打上"只听不说"的标记，让现有冷却+概率路径决定
+            should_reply = False
         elif BOT_USERNAME:
             # 被 @ 了，要把 @BotName 从文本里抠掉，免得大模型看着奇怪
             user_text = user_text.replace(f"@{BOT_USERNAME}", "").strip()
-        
+
     msg_date = msg.get("date")
     msg_id = msg.get("message_id")
     sender_name = msg.get("from", {}).get("first_name", "神秘人")
 
     # 把 should_reply 开关传给后台线程
-    Thread(target=process_message_background, args=(user_text, chat_id, sender_name, msg_date, should_reply, msg_id)).start()
+    Thread(target=process_message_background,
+           args=(user_text, chat_id, sender_name, msg_date, should_reply, msg_id,
+                 image_b64, image_mime, is_voice)).start()
     Thread(target=self_heal_webhook).start()
     return "ok"
 
