@@ -266,7 +266,7 @@ def call_claude(user_content, memory, history, current_user_time):
     }
     
     base = CLAUDE_URL.rstrip("/")
-    resp = requests.post(f"{base}/messages", headers=headers, json=body, timeout=30)
+    resp = requests.post(f"{base}/messages", headers=headers, json=body, timeout=120)
     result = resp.json()
     
     if "content" in result:
