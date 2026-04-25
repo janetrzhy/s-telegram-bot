@@ -325,9 +325,15 @@ def transcribe_voice(audio_bytes, mime="audio/ogg"):
         files = {"file": ("voice.ogg", audio_bytes, mime)}
         data = {"model": WHISPER_MODEL}
         resp = requests.post(url, headers=headers, files=files, data=data, timeout=60)
+        if resp.status_code != 200:
+            print(f"[ERROR] Whisper {resp.status_code}: {resp.text[:300]}")
+            return None
         result = resp.json()
         text = (result.get("text") or "").strip()
-        return text or None
+        if not text:
+            print(f"[ERROR] Whisper 返回空文本: {result}")
+            return None
+        return text
     except Exception as e:
         print(f"[ERROR] 转写失败: {e}")
         return None
