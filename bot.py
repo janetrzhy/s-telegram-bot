@@ -260,7 +260,7 @@ def call_claude(user_content, memory, history, current_user_time):
     }
 
     body = {
-        "model": random.choice(["按量R-claude-opus-4-6"]),
+        "model": random.choice(["按量L-claude-opus-4-6-thinking"]),
         "max_tokens": 300,
         "system": system,
         "messages": messages
