@@ -35,6 +35,9 @@ ALLOWED_IDS = [i.strip() for i in TG_CHAT_ID_RAW.split(",") if i.strip()]
 
 CLAUDE_KEY = os.environ.get("CLAUDE_API_KEY")
 CLAUDE_URL = os.environ.get("CLAUDE_BASE_URL")
+# 模型名：和 URL/Key 经常一起改，所以也走环境变量。逗号分隔多个会随机轮选
+CLAUDE_MODEL_RAW = os.environ.get("CLAUDE_MODEL", "按量L-claude-opus-4-6,按量L-claude-opus-4-6-thinking")
+CLAUDE_MODELS = [m.strip() for m in CLAUDE_MODEL_RAW.split(",") if m.strip()]
 MEMORY_URL = os.environ.get("MEMORY_GIST_URL", "")
 
 # 👇 师兄加料：双轨记忆核心！
@@ -260,7 +263,7 @@ def call_claude(user_content, memory, history, current_user_time):
     }
 
     body = {
-        "model": random.choice(["按量L-claude-opus-4-6", "按量L-claude-opus-4-6-thinking"]),
+        "model": random.choice(CLAUDE_MODELS),
         "max_tokens": 300,
         "system": system,
         "messages": messages
@@ -566,6 +569,10 @@ def webhook():
         elif BOT_USERNAME:
             # 被 @ 了，要把 @BotName 从文本里抠掉，免得大模型看着奇怪
             user_text = user_text.replace(f"@{BOT_USERNAME}", "").strip()
+
+        # 群里只要有图就必须读+回：否则历史里只剩 [图片] 占位符，之后想"刚才那张图"就失忆了
+        if image_b64:
+            should_reply = True
 
     msg_date = msg.get("date")
     msg_id = msg.get("message_id")
