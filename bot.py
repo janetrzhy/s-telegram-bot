@@ -139,7 +139,12 @@ def fetch_memory():
             summary += f"\n词汇风格：{json.dumps(vocabulary, ensure_ascii=False)}"
         rolling_7days = memory.get("rolling_7days")
         if rolling_7days:
-            recent = rolling_7days[-3:] if isinstance(rolling_7days, list) else rolling_7days
+            if isinstance(rolling_7days, dict):
+                recent = dict(list(rolling_7days.items())[-3:])
+            elif isinstance(rolling_7days, list):
+                recent = rolling_7days[-3:]
+            else:
+                recent = rolling_7days
             summary += f"\n近三天记忆：{json.dumps(recent, ensure_ascii=False)}"
         return summary
         
