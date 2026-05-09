@@ -17,6 +17,21 @@ TRIGGER_WORDS = ["人机", "燕燕生气了", "人呢", "Claude"] # 敏感词：
 COOLDOWN_TIME = 120 # 强制冷却 60 秒
 REACTION_PROBABILITY = 0.05  # 旁听时给别人消息点表情的概率
 REACTION_EMOJI = ["👍", "❤", "🔥", "🥰", "👏", "😁", "🤔", "🎉", "🤩", "🙏", "💯", "😍", "🤗", "👌", "🤣"]
+# 关键词 → 表情：从上往下匹配，第一个命中就用，都没命中回退到 REACTION_EMOJI 随机
+REACTION_KEYWORD_MAP = [
+    (["哈哈", "笑死", "lol", "lmao"], "🤣"),
+    (["生日", "恭喜", "祝贺", "结婚", "庆祝"], "🎉"),
+    (["牛逼", "厉害", "好强", "yyds", "猛"], "🔥"),
+    (["爱你", "想你", "想念", "亲亲", "么么"], "❤"),
+    (["哭", "难过", "伤心", "心疼", "可怜", "难受"], "😢"),
+    (["谢谢", "感谢", "辛苦"], "🙏"),
+    (["收到", "明白", "懂了", "好的"], "👌"),
+    (["好看", "可爱", "漂亮", "好美"], "🥰"),
+    (["卧槽", "我去", "天哪", "震惊", "wtf"], "🤯"),
+    (["nb", "赞", "支持", "👍"], "👍"),
+    (["饿了", "好吃", "想吃"], "😍"),
+    (["晚安", "睡觉", "好困"], "😴"),
+]
 LAST_SPOKE = {} # 记录每个群的主动发言时间
 HISTORY_CACHE = {} # {chat_id: list} 内存历史缓存
 LAST_SAVED = {} # {chat_id: float} 上次写 Gist 的时间戳
@@ -363,9 +378,17 @@ def send_chat_action(chat_id, action="typing"):
     except Exception as e:
         print(f"[ERROR] {action} action 发送失败: {e}")
 
-def send_reaction(chat_id, message_id):
+def pick_reaction_emoji(text):
+    if text:
+        lowered = text.lower()
+        for keywords, emoji in REACTION_KEYWORD_MAP:
+            if any(kw in lowered for kw in keywords):
+                return emoji
+    return random.choice(REACTION_EMOJI)
+
+def send_reaction(chat_id, message_id, text=""):
     try:
-        emoji = random.choice(REACTION_EMOJI)
+        emoji = pick_reaction_emoji(text)
         requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/setMessageReaction",
                       json={"chat_id": chat_id, "message_id": message_id,
                             "reaction": [{"type": "emoji", "emoji": emoji}]},
@@ -495,7 +518,7 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
             print(f"[DEBUG] 🤫 旁听模式，记录 {sender_name} 的发言。")
             # 旁听时偶尔给一个表情，零 token 成本，纯刷存在感
             if str(chat_id).startswith("-") and msg_id and random.random() < REACTION_PROBABILITY:
-                send_reaction(chat_id, msg_id)
+                send_reaction(chat_id, msg_id, text)
             save_history(history, chat_id)  # 受 60s 节流
             return
 
