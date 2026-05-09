@@ -15,7 +15,7 @@ app = Flask(__name__)
 REPLY_PROBABILITY = 0.1  # 师兄建议 0.1 到 0.2 之间，既灵动又不烦人
 TRIGGER_WORDS = ["人机", "燕燕生气了", "人呢", "Claude"] # 敏感词：群里一提到这些，必然跳出来接茬！
 COOLDOWN_TIME = 120 # 强制冷却 60 秒
-REACTION_PROBABILITY = 0.05  # 旁听时给别人消息点表情的概率
+REACTION_PROBABILITY = 0.1  # 旁听时给别人消息点表情的概率
 REACTION_EMOJI = ["👍", "❤", "🔥", "🥰", "👏", "😁", "🤔", "🎉", "🤩", "🙏", "💯", "😍", "🤗", "👌", "🤣"]
 # 关键词 → 表情：从上往下匹配，第一个命中就用，都没命中回退到 REACTION_EMOJI 随机
 REACTION_KEYWORD_MAP = [
