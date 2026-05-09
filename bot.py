@@ -15,6 +15,8 @@ app = Flask(__name__)
 REPLY_PROBABILITY = 0.1  # 师兄建议 0.1 到 0.2 之间，既灵动又不烦人
 TRIGGER_WORDS = ["人机", "燕燕生气了", "人呢", "Claude"] # 敏感词：群里一提到这些，必然跳出来接茬！
 COOLDOWN_TIME = 120 # 强制冷却 60 秒
+REACTION_PROBABILITY = 0.05  # 旁听时给别人消息点表情的概率
+REACTION_EMOJI = ["👍", "❤", "🔥", "🥰", "👏", "😁", "🤔", "🎉", "🤩", "🙏", "💯", "😍", "🤗", "👌", "🤣"]
 LAST_SPOKE = {} # 记录每个群的主动发言时间
 HISTORY_CACHE = {} # {chat_id: list} 内存历史缓存
 LAST_SAVED = {} # {chat_id: float} 上次写 Gist 的时间戳
@@ -353,6 +355,24 @@ def transcribe_voice(audio_bytes, mime="audio/ogg"):
         print(f"[ERROR] 转写失败: {e}")
         return None
 
+def send_chat_action(chat_id, action="typing"):
+    # Telegram 自动 5 秒过期，发一次就够撑过一次 Claude 调用
+    try:
+        requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendChatAction",
+                      json={"chat_id": chat_id, "action": action}, timeout=5)
+    except Exception as e:
+        print(f"[ERROR] {action} action 发送失败: {e}")
+
+def send_reaction(chat_id, message_id):
+    try:
+        emoji = random.choice(REACTION_EMOJI)
+        requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/setMessageReaction",
+                      json={"chat_id": chat_id, "message_id": message_id,
+                            "reaction": [{"type": "emoji", "emoji": emoji}]},
+                      timeout=10)
+    except Exception as e:
+        print(f"[ERROR] 点表情失败: {e}")
+
 # 👇 师兄正骨：加入 chat_id 参数，再也不会发错群了！
 def send_telegram(chat_id, text, reply_to_message_id=None):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
@@ -473,10 +493,16 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         # 🛡️ 师兄的防 403 结界：如果依然是旁听模式，悄悄记下，绝对不去碰 GitHub API
         if not should_reply:
             print(f"[DEBUG] 🤫 旁听模式，记录 {sender_name} 的发言。")
+            # 旁听时偶尔给一个表情，零 token 成本，纯刷存在感
+            if str(chat_id).startswith("-") and msg_id and random.random() < REACTION_PROBABILITY:
+                send_reaction(chat_id, msg_id)
             save_history(history, chat_id)  # 受 60s 节流
             return
 
         print(f"[DEBUG] 🗣️ Bot 被唤醒！开始燃烧老公的算力...")
+
+        # 让对方先看到"正在输入..."，给 Claude 几秒思考时间不至于尴尬
+        send_chat_action(chat_id, "typing")
 
         # 👁️ 多模态：带图就组装结构化 content（base64 仅这一轮临时使用，不进 history）
         if image_b64:
