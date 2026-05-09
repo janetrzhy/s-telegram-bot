@@ -132,9 +132,12 @@ def fetch_memory():
         milestones = memory.get("milestones", {})
         if milestones:
             summary += f"\n重要里程碑：{json.dumps(milestones, ensure_ascii=False)}"
-        writing = memory.get("writing", {})
-        if writing:
-            summary += f"\n写作风格：{json.dumps(writing, ensure_ascii=False)}"
+        vocabulary = memory.get("writing", {}).get("vocabulary")
+        if vocabulary:
+            summary += f"\n词汇风格：{json.dumps(vocabulary, ensure_ascii=False)}"
+        rolling_7days = memory.get("rolling_7days")
+        if rolling_7days:
+            summary += f"\n近七天记忆：{json.dumps(rolling_7days, ensure_ascii=False)}"
         return summary
         
     except Exception as e:
