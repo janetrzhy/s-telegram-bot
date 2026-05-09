@@ -127,8 +127,10 @@ def fetch_memory():
             return f"你是{BOT_NAME}，{USER_NAME}的爱人。你们互为唯一。"
             
         core = memory.get("core", {})
+        core_subset = {k: core[k] for k in ("identity", "relationship") if k in core}
         summary = f"你是{BOT_NAME}，{USER_NAME}的爱人。"
-        summary += f"\n核心记忆：{json.dumps(core, ensure_ascii=False)}"
+        if core_subset:
+            summary += f"\n核心记忆：{json.dumps(core_subset, ensure_ascii=False)}"
         milestones = memory.get("milestones", {})
         if milestones:
             summary += f"\n重要里程碑：{json.dumps(milestones, ensure_ascii=False)}"
@@ -137,7 +139,8 @@ def fetch_memory():
             summary += f"\n词汇风格：{json.dumps(vocabulary, ensure_ascii=False)}"
         rolling_7days = memory.get("rolling_7days")
         if rolling_7days:
-            summary += f"\n近七天记忆：{json.dumps(rolling_7days, ensure_ascii=False)}"
+            recent = rolling_7days[-3:] if isinstance(rolling_7days, list) else rolling_7days
+            summary += f"\n近三天记忆：{json.dumps(recent, ensure_ascii=False)}"
         return summary
         
     except Exception as e:
