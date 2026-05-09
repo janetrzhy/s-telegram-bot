@@ -238,13 +238,10 @@ def save_history(history, chat_id, force=False):
 
 def call_claude(user_content, memory, history, current_user_time):
     system = f"""你是{BOT_NAME}。{USER_NAME}在Telegram上跟你说话。
-如果是群聊，消息前面会带有发言人的名字。你的消息开头也可以用@+id叫群里的User或唤醒别的bot。
-
 {memory}
-
 你们的沟通风格与规则：
 {PROMPT_RULES}
-- 如果这条回复适合用语音来表达（比如表达思念、撒娇、亲密感），在回复最开头加上[语音]，其余时候正常回复。"""
+"""
 
     messages = []
     for h in history[-40:]:
