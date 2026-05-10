@@ -386,10 +386,14 @@ def pick_reaction_emoji(text):
 def send_reaction(chat_id, message_id, text=""):
     try:
         emoji = pick_reaction_emoji(text)
-        requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/setMessageReaction",
+        resp = requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/setMessageReaction",
                       json={"chat_id": chat_id, "message_id": message_id,
                             "reaction": [{"type": "emoji", "emoji": emoji}]},
                       timeout=10)
+        if resp.status_code != 200 or not resp.json().get("ok"):
+            print(f"[ERROR] 点表情被拒({resp.status_code}): {resp.text[:200]}")
+        else:
+            print(f"[DEBUG] 😏 给 msg {message_id} 点了 {emoji}")
     except Exception as e:
         print(f"[ERROR] 点表情失败: {e}")
 
@@ -514,8 +518,10 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         if not should_reply:
             print(f"[DEBUG] 🤫 旁听模式，记录 {sender_name} 的发言。")
             # 旁听时偶尔给一个表情，零 token 成本，纯刷存在感
-            if str(chat_id).startswith("-") and msg_id and random.random() < REACTION_PROBABILITY:
-                send_reaction(chat_id, msg_id, text)
+            if str(chat_id).startswith("-") and msg_id:
+                if random.random() < REACTION_PROBABILITY:
+                    print(f"[DEBUG] 🎲 表情骰子命中，准备点 reaction")
+                    send_reaction(chat_id, msg_id, text)
             save_history(history, chat_id)  # 受 60s 节流
             return
 
