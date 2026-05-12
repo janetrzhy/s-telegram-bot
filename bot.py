@@ -425,20 +425,34 @@ def send_reaction(chat_id, message_id, text=""):
     except Exception as e:
         print(f"[ERROR] 点表情失败: {e}")
 
-def split_message(text, max_parts=3, sentences_per_chunk=2):
-    """按句子分组，每条约 2 句（1-3 句），最多 max_parts 条。"""
-    sentences = [s for s in re.split(r'(?<=[。！？!?.])\s*|\n+', text) if s.strip()]
-    if len(sentences) <= sentences_per_chunk:
+def split_message(text):
+    """按中文句末标点切句：1-3句不拆，4-6句随机2或3条，7+句固定3条(3+2+剩余)。"""
+    sentences = [s for s in re.split(r'(?<=[。！？])\s*|\n+', text) if s.strip()]
+    n = len(sentences)
+    if n <= 3:
         return [text.strip()]
-    chunks = []
-    for i in range(0, len(sentences), sentences_per_chunk):
-        chunk = ''.join(sentences[i:i + sentences_per_chunk])
-        if chunk.strip():
-            chunks.append(chunk.strip())
-    if len(chunks) > max_parts:
-        last = ''.join(chunks[max_parts - 1:])
-        chunks = chunks[:max_parts - 1] + [last]
-    return [c for c in chunks if c]
+    if n >= 7:
+        chunks = []
+        for size in (3, 2):
+            chunk = ''.join(sentences[:size])
+            sentences = sentences[size:]
+            if chunk.strip():
+                chunks.append(chunk.strip())
+            if not sentences:
+                break
+        if sentences:
+            chunks.append(''.join(sentences).strip())
+        return [c for c in chunks if c]
+    # 4-6句：随机拆成2或3条
+    parts = random.choice([2, 3])
+    if parts == 2:
+        mid = -(-n // 2)  # ceil(n/2)
+        splits = [sentences[:mid], sentences[mid:]]
+    else:
+        s1 = -(-n // 3)
+        s2 = s1 + -((-(n - s1)) // 2)
+        splits = [sentences[:s1], sentences[s1:s2], sentences[s2:]]
+    return [c for c in (''.join(g).strip() for g in splits) if c]
 
 # 👇 师兄正骨：加入 chat_id 参数，再也不会发错群了！
 def send_telegram(chat_id, text, reply_to_message_id=None):
