@@ -426,9 +426,9 @@ def send_reaction(chat_id, message_id, text=""):
         print(f"[ERROR] 点表情失败: {e}")
 
 def split_message(text):
-    """按中文句末标点切句：1-3句不拆，4-6句随机2或3条，7+句均匀3条。"""
-    sentences = [s for s in re.split(r'(?<=[。！？])\s*|\n+', text) if s.strip()]
-    n = len(sentences)
+    """按换行和中文标点切单元：1-3单元不拆，4-6随机2或3条，7+均匀3条。"""
+    units = [s.strip() for s in re.split(r'(?<=[。！？])\s*|\n+', text) if s.strip()]
+    n = len(units)
     if n <= 3:
         return [text.strip()]
     parts = random.choice([2, 3]) if n <= 6 else 3
@@ -436,7 +436,7 @@ def split_message(text):
     chunks, start = [], 0
     for i in range(parts):
         size = q + (1 if i < r else 0)
-        chunk = ''.join(sentences[start:start + size]).strip()
+        chunk = ''.join(units[start:start + size]).strip()
         if chunk:
             chunks.append(chunk)
         start += size
