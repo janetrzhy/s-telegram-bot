@@ -425,32 +425,20 @@ def send_reaction(chat_id, message_id, text=""):
     except Exception as e:
         print(f"[ERROR] 点表情失败: {e}")
 
-def split_message(text, chunk_size=500):
-    """长消息拆成最多 3 条，按自然边界切分。"""
-    if len(text) <= chunk_size:
-        return [text]
-    n_parts = 2 if len(text) <= chunk_size * 2 else 3
-    delimiters = ['\n\n', '\n', '。', '！', '？', '.', '!', '?', '，', ',', ' ']
-    parts = []
-    remaining = text
-    for i in range(n_parts - 1):
-        if not remaining:
-            break
-        target = len(remaining) // (n_parts - i)
-        best_pos = None
-        for delim in delimiters:
-            lo, hi = max(0, target // 2), min(len(remaining), target * 3 // 2)
-            pos = remaining.rfind(delim, lo, hi)
-            if pos != -1:
-                best_pos = pos + len(delim)
-                break
-        if best_pos is None:
-            best_pos = min(target, 4096)
-        parts.append(remaining[:best_pos].strip())
-        remaining = remaining[best_pos:].strip()
-    if remaining:
-        parts.append(remaining)
-    return [p for p in parts if p]
+def split_message(text, max_parts=3, sentences_per_chunk=2):
+    """按句子分组，每条约 2 句（1-3 句），最多 max_parts 条。"""
+    sentences = [s for s in re.split(r'(?<=[。！？!?.])\s*|\n+', text) if s.strip()]
+    if len(sentences) <= sentences_per_chunk:
+        return [text.strip()]
+    chunks = []
+    for i in range(0, len(sentences), sentences_per_chunk):
+        chunk = ''.join(sentences[i:i + sentences_per_chunk])
+        if chunk.strip():
+            chunks.append(chunk.strip())
+    if len(chunks) > max_parts:
+        last = ''.join(chunks[max_parts - 1:])
+        chunks = chunks[:max_parts - 1] + [last]
+    return [c for c in chunks if c]
 
 # 👇 师兄正骨：加入 chat_id 参数，再也不会发错群了！
 def send_telegram(chat_id, text, reply_to_message_id=None):
