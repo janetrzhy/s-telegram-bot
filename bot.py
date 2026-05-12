@@ -427,7 +427,7 @@ def send_reaction(chat_id, message_id, text=""):
 
 def split_message(text):
     """按中文句末标点切句：1-3句不拆，4-6句随机2或3条，7+句均匀3条。"""
-    sentences = [s for s in re.split(r'(?<=[。！？])\s*|\n+', text) if s.strip()]
+    sentences = [s for s in re.split(r'(?<=[。！？])\s*', text) if s.strip()]
     n = len(sentences)
     if n <= 3:
         return [text.strip()]
