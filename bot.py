@@ -425,16 +425,19 @@ def send_reaction(chat_id, message_id, text=""):
     except Exception as e:
         print(f"[ERROR] 点表情失败: {e}")
 
-def split_message(text, max_parts=3):
-    """按句子拆分，每句单独一条，最多 max_parts 条。"""
-    # 以句末标点或换行为边界切句，保留标点
+def split_message(text, max_parts=3, sentences_per_chunk=2):
+    """按句子分组，每条约 2 句（1-3 句），最多 max_parts 条。"""
     sentences = [s for s in re.split(r'(?<=[。！？!?.])\s*|\n+', text) if s.strip()]
-    if len(sentences) <= 1:
+    if len(sentences) <= sentences_per_chunk:
         return [text.strip()]
-    chunks = [s.strip() for s in sentences[:max_parts]]
-    # 超出部分追加到最后一条
-    for s in sentences[max_parts:]:
-        chunks[-1] += '\n' + s.strip()
+    chunks = []
+    for i in range(0, len(sentences), sentences_per_chunk):
+        chunk = ''.join(sentences[i:i + sentences_per_chunk])
+        if chunk.strip():
+            chunks.append(chunk.strip())
+    if len(chunks) > max_parts:
+        last = ''.join(chunks[max_parts - 1:])
+        chunks = chunks[:max_parts - 1] + [last]
     return [c for c in chunks if c]
 
 # 👇 师兄正骨：加入 chat_id 参数，再也不会发错群了！
