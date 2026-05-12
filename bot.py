@@ -55,6 +55,23 @@ CLAUDE_URL = os.environ.get("CLAUDE_BASE_URL")
 # 模型名：和 URL/Key 经常一起改，所以也走环境变量。逗号分隔多个会随机轮选
 CLAUDE_MODEL_RAW = os.environ.get("CLAUDE_MODEL", "按量L-claude-opus-4-6,按量L-claude-opus-4-6-thinking")
 CLAUDE_MODELS = [m.strip() for m in CLAUDE_MODEL_RAW.split(",") if m.strip()]
+
+# 多 provider 失败转移：CLAUDE_API_KEY/CLAUDE_BASE_URL/CLAUDE_MODEL 是 #1，
+# 加 _2/_3/... 后缀就是后备。第 1 个挂了或返错会自动降级到下一个
+def _build_claude_providers():
+    providers = []
+    if CLAUDE_KEY and CLAUDE_URL:
+        providers.append({"key": CLAUDE_KEY, "url": CLAUDE_URL, "models": CLAUDE_MODELS})
+    for i in range(2, 10):
+        key = os.environ.get(f"CLAUDE_API_KEY_{i}")
+        url = os.environ.get(f"CLAUDE_BASE_URL_{i}")
+        if key and url:
+            models_raw = os.environ.get(f"CLAUDE_MODEL_{i}", "")
+            models = [m.strip() for m in models_raw.split(",") if m.strip()] or CLAUDE_MODELS
+            providers.append({"key": key, "url": url, "models": models})
+    return providers
+
+CLAUDE_PROVIDERS = _build_claude_providers()
 MEMORY_URL = os.environ.get("MEMORY_GIST_URL", "")
 
 # 👇 师兄加料：双轨记忆核心！
@@ -281,30 +298,41 @@ def call_claude(user_content, memory, history, current_user_time):
     if isinstance(user_content, list) and messages and messages[-1]["role"] == "user":
         messages[-1]["content"] = user_content
 
-    headers = {
-        "x-api-key": CLAUDE_KEY,
-        "content-type": "application/json",
-        "anthropic-version": "2023-06-01"
-    }
+    if not CLAUDE_PROVIDERS:
+        print("[ERROR] 没有配置任何 Claude provider")
+        return None
 
-    body = {
-        "model": random.choice(CLAUDE_MODELS),
-        "max_tokens": 300,
-        "system": system,
-        "messages": messages
-    }
-    
-    base = CLAUDE_URL.rstrip("/")
-    resp = requests.post(f"{base}/messages", headers=headers, json=body, timeout=120)
-    result = resp.json()
-    
-    if "content" in result:
-        for block in result["content"]:
-            if block.get("type") == "text":
-                return re.sub(r'\n{2,}', '\n', block["text"].strip())
-    elif "choices" in result:
-        return re.sub(r'\n{2,}', '\n', result["choices"][0]["message"]["content"].strip())
-    print(f"[ERROR] Claude API 返回异常: {result}")
+    body_base = {"max_tokens": 300, "system": system, "messages": messages}
+
+    for idx, provider in enumerate(CLAUDE_PROVIDERS, start=1):
+        try:
+            headers = {
+                "x-api-key": provider["key"],
+                "content-type": "application/json",
+                "anthropic-version": "2023-06-01"
+            }
+            body = {**body_base, "model": random.choice(provider["models"])}
+            base = provider["url"].rstrip("/")
+            resp = requests.post(f"{base}/messages", headers=headers, json=body, timeout=120)
+            if resp.status_code != 200:
+                print(f"[ERROR] provider#{idx} HTTP {resp.status_code}: {resp.text[:200]}")
+                continue
+            result = resp.json()
+            if "content" in result:
+                for block in result["content"]:
+                    if block.get("type") == "text":
+                        if idx > 1:
+                            print(f"[INFO] ✅ provider#{idx} 救场成功")
+                        return re.sub(r'\n{2,}', '\n', block["text"].strip())
+            elif "choices" in result:
+                if idx > 1:
+                    print(f"[INFO] ✅ provider#{idx} 救场成功")
+                return re.sub(r'\n{2,}', '\n', result["choices"][0]["message"]["content"].strip())
+            print(f"[ERROR] provider#{idx} 响应没 text 块: {str(result)[:200]}")
+        except Exception as e:
+            print(f"[ERROR] provider#{idx} 异常: {e}")
+
+    print("[ERROR] 所有 Claude provider 都挂了")
     return None
 
 def detect_voice(text):
