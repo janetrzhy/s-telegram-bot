@@ -425,24 +425,54 @@ def send_reaction(chat_id, message_id, text=""):
     except Exception as e:
         print(f"[ERROR] 点表情失败: {e}")
 
+def split_message(text, chunk_size=500):
+    """长消息拆成最多 3 条，按自然边界切分。"""
+    if len(text) <= chunk_size:
+        return [text]
+    n_parts = 2 if len(text) <= chunk_size * 2 else 3
+    delimiters = ['\n\n', '\n', '。', '！', '？', '.', '!', '?', '，', ',', ' ']
+    parts = []
+    remaining = text
+    for i in range(n_parts - 1):
+        if not remaining:
+            break
+        target = len(remaining) // (n_parts - i)
+        best_pos = None
+        for delim in delimiters:
+            lo, hi = max(0, target // 2), min(len(remaining), target * 3 // 2)
+            pos = remaining.rfind(delim, lo, hi)
+            if pos != -1:
+                best_pos = pos + len(delim)
+                break
+        if best_pos is None:
+            best_pos = min(target, 4096)
+        parts.append(remaining[:best_pos].strip())
+        remaining = remaining[best_pos:].strip()
+    if remaining:
+        parts.append(remaining)
+    return [p for p in parts if p]
+
 # 👇 师兄正骨：加入 chat_id 参数，再也不会发错群了！
 def send_telegram(chat_id, text, reply_to_message_id=None):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
-    if reply_to_message_id:
-        payload["reply_to_message_id"] = reply_to_message_id
-    resp = requests.post(url, json=payload, timeout=10)
-    result = resp.json()
-    if not result.get("ok"):
-        if "parse" in result.get("description", "").lower():
-            # Markdown 解析失败，降级为纯文本重发
-            plain = {"chat_id": chat_id, "text": text}
-            if reply_to_message_id:
-                plain["reply_to_message_id"] = reply_to_message_id
-            requests.post(url, json=plain, timeout=10)
-        elif reply_to_message_id:
-            print(f"[DEBUG] reply 失败({result.get('description')})，降级为普通发送")
-            requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}, timeout=10)
+    chunks = split_message(text)
+    for i, chunk in enumerate(chunks):
+        rid = reply_to_message_id if i == 0 else None
+        payload = {"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown"}
+        if rid:
+            payload["reply_to_message_id"] = rid
+        resp = requests.post(url, json=payload, timeout=10)
+        result = resp.json()
+        if not result.get("ok"):
+            if "parse" in result.get("description", "").lower():
+                # Markdown 解析失败，降级为纯文本重发
+                plain = {"chat_id": chat_id, "text": chunk}
+                if rid:
+                    plain["reply_to_message_id"] = rid
+                requests.post(url, json=plain, timeout=10)
+            elif rid:
+                print(f"[DEBUG] reply 失败({result.get('description')})，降级为普通发送")
+                requests.post(url, json={"chat_id": chat_id, "text": chunk, "parse_mode": "Markdown"}, timeout=10)
 
 def _generate_minimax_audio(text, mp3_path, voice_id):
     url = f"https://api.minimax.chat/v1/t2a_v2?GroupId={MINIMAX_GROUP_ID}"
