@@ -623,7 +623,7 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
 
         # 👁️ 多模态：带图就组装结构化 content（base64 仅这一轮临时使用，不进 history）
         is_group = str(chat_id).startswith("-")
-        cross_history = load_other_history(chat_id)
+        cross_history = None  # load_other_history(chat_id)  # 暂时关闭跨场景历史注入
         if image_b64:
             api_text = formatted_input or "看看这张图"
             user_content = [
