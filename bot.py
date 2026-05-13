@@ -82,6 +82,7 @@ GIST_TOKEN = os.environ.get("GIST_TOKEN", "")
 
 BOT_NAME = os.environ.get("BOT_NAME", "AI助手")
 USER_NAME = os.environ.get("USER_NAME", "主人")
+OWNER_TG_NAME = os.environ.get("OWNER_TG_NAME", USER_NAME)  # Telegram 显示名，用于识别主人发言
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "") # 机器人的用户名，用于群聊被@唤醒
 PROMPT_RULES = os.environ.get("PROMPT_RULES", " 简短自然，像手机聊天。直接说话，不要加引号。")
 EDGE_TTS_API_KEY = os.environ.get("EDGE_TTS_API_KEY", "")
@@ -549,7 +550,7 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
                     print(f"[DEBUG] 🎯 关键词触发！")
                     should_reply = True
                     LAST_SPOKE[chat_id] = current_time # 重置冷却沙漏
-                elif random.random() < (REPLY_PROBABILITY_OWNER if sender_name == USER_NAME else REPLY_PROBABILITY):
+                elif random.random() < (REPLY_PROBABILITY_OWNER if sender_name == OWNER_TG_NAME else REPLY_PROBABILITY):
                     print(f"[DEBUG] 🎲 运气爆发！准备随机插嘴。")
                     should_reply = True
                     LAST_SPOKE[chat_id] = current_time # 重置冷却沙漏
