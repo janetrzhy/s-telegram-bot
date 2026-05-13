@@ -12,7 +12,8 @@ from threading import Thread
 from zoneinfo import ZoneInfo
 
 app = Flask(__name__)
-REPLY_PROBABILITY = 0.05  # 师兄建议 0.1 到 0.2 之间，既灵动又不烦人
+REPLY_PROBABILITY = 0.02        # 其他人发言的随机回复概率
+REPLY_PROBABILITY_OWNER = 0.2   # USER_NAME 发言的随机回复概率
 TRIGGER_WORDS = ["人机", "燕燕生气了", "人呢", "Claude"] # 敏感词：群里一提到这些，必然跳出来接茬！
 COOLDOWN_TIME = 120 # 强制冷却 60 秒
 REACTION_PROBABILITY = 0.1  # 旁听时给别人消息点表情的概率
@@ -548,7 +549,7 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
                     print(f"[DEBUG] 🎯 关键词触发！")
                     should_reply = True
                     LAST_SPOKE[chat_id] = current_time # 重置冷却沙漏
-                elif random.random() < REPLY_PROBABILITY:
+                elif random.random() < (REPLY_PROBABILITY_OWNER if sender_name == USER_NAME else REPLY_PROBABILITY):
                     print(f"[DEBUG] 🎲 运气爆发！准备随机插嘴。")
                     should_reply = True
                     LAST_SPOKE[chat_id] = current_time # 重置冷却沙漏
