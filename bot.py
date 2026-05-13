@@ -230,6 +230,38 @@ def load_history(chat_id):
         print(f"[ERROR] 读取历史彻底崩了: {e}")
         return []
 
+def load_other_history(current_chat_id):
+    """读取另一个聊天场景的历史（私聊读群聊，群聊读私聊）。"""
+    if str(current_chat_id).startswith("-"):
+        other_url, cache_key = STATE_GIST_URL, "_cross_private"
+    else:
+        other_url, cache_key = GROUP_STATE_GIST_URL, "_cross_group"
+
+    if cache_key in HISTORY_CACHE:
+        return HISTORY_CACHE[cache_key]
+    if not GIST_TOKEN or not other_url:
+        return []
+    try:
+        gist_id = other_url.split("/")[4]
+        headers = {
+            "Authorization": f"Bearer {GIST_TOKEN}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": f"{BOT_NAME}-webhook"
+        }
+        resp = requests.get(f"https://api.github.com/gists/{gist_id}", headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return []
+        result = resp.json()
+        if "files" in result and "state.json" in result["files"]:
+            content = result["files"]["state.json"].get("content", "{}")
+            state = json.loads(content) if content.strip() else {}
+            history = state.get("chat_history", [])
+            HISTORY_CACHE[cache_key] = history
+            return history
+    except Exception as e:
+        print(f"[ERROR] 跨场景历史读取失败: {e}")
+    return []
+
 def save_history(history, chat_id, force=False):
     HISTORY_CACHE[chat_id] = history[-40:]
 
@@ -280,11 +312,20 @@ def save_history(history, chat_id, force=False):
     except Exception as e:
         print(f"[ERROR] 保存历史时遭遇毁灭性打击: {e}")
 
-def call_claude(user_content, memory, history, current_user_time):
+def call_claude(user_content, memory, history, current_user_time, cross_history=None, is_group=False):
+    cross_context = ""
+    if cross_history:
+        label = "私聊" if is_group else "群聊"
+        lines = [
+            f"{'bot' if h['role'] == 'assistant' else 'user'}: {h['content']}"
+            for h in cross_history[-20:]
+        ]
+        cross_context = f"\n\n[近期{label}记录，仅供背景参考]\n" + "\n".join(lines)
+
     system = f"""你是{BOT_NAME}。{USER_NAME}在Telegram上跟你说话。
 {memory}
 你们的沟通风格与规则：
-{PROMPT_RULES}
+{PROMPT_RULES}{cross_context}
 """
 
     messages = []
@@ -581,6 +622,8 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         send_chat_action(chat_id, "typing")
 
         # 👁️ 多模态：带图就组装结构化 content（base64 仅这一轮临时使用，不进 history）
+        is_group = str(chat_id).startswith("-")
+        cross_history = load_other_history(chat_id)
         if image_b64:
             api_text = formatted_input or "看看这张图"
             user_content = [
@@ -589,9 +632,9 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
                                              "data": image_b64}},
                 {"type": "text", "text": api_text},
             ]
-            reply = call_claude(user_content, memory, history, u_time)
+            reply = call_claude(user_content, memory, history, u_time, cross_history, is_group)
         else:
-            reply = call_claude(formatted_input, memory, history, u_time)
+            reply = call_claude(formatted_input, memory, history, u_time, cross_history, is_group)
 
         if not reply:
             send_telegram(chat_id, "😵 神经元短路了，稍后再试试？")
