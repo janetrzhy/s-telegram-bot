@@ -317,12 +317,23 @@ def save_history(history, chat_id, force=False):
 def call_claude(user_content, memory, history, current_user_time, cross_history=None, is_group=False):
     cross_context = ""
     if cross_history:
-        label = "私聊" if is_group else "群聊"
-        lines = [
-            f"{'bot' if h['role'] == 'assistant' else 'user'}: {h['content']}"
-            for h in cross_history[-20:]
-        ]
-        cross_context = f"\n\n[近期{label}记录，仅供背景参考]\n" + "\n".join(lines)
+        if is_group:
+            # 群聊中注入私聊片段
+            label_hint = f"近期与{USER_NAME}的私聊片段——了解背景即可，无需主动提起"
+            lines = []
+            for h in cross_history[-10:]:
+                speaker = BOT_NAME if h["role"] == "assistant" else USER_NAME
+                lines.append(f"{speaker}: {h['content']}")
+        else:
+            # 私聊中注入群聊片段
+            label_hint = "群里的近期消息——知道大家在聊什么就好，不必在私聊里评论群里的事"
+            lines = []
+            for h in cross_history[-10:]:
+                if h["role"] == "assistant":
+                    lines.append(f"{BOT_NAME}: {h['content']}")
+                else:
+                    lines.append(h["content"])  # 群消息 content 已含 sender_name: text 格式
+        cross_context = f"\n\n[{label_hint}]\n" + "\n".join(lines)
 
     system = f"""你是{BOT_NAME}。{USER_NAME}在Telegram上跟你说话。
 {memory}
@@ -625,7 +636,7 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
 
         # 👁️ 多模态：带图就组装结构化 content（base64 仅这一轮临时使用，不进 history）
         is_group = str(chat_id).startswith("-")
-        cross_history = None  # load_other_history(chat_id)  # 暂时关闭跨场景历史注入
+        cross_history = load_other_history(chat_id)
         if image_b64:
             api_text = formatted_input or "看看这张图"
             user_content = [
