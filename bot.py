@@ -318,15 +318,13 @@ def call_claude(user_content, memory, history, current_user_time, cross_history=
     cross_context = ""
     if cross_history:
         if is_group:
-            # 群聊中注入私聊片段
-            label_hint = f"你与{USER_NAME}的私聊片段——可以自然地提起，就像真实聊天一样"
+            label_hint = f"与{USER_NAME}的近期私聊"
             lines = []
             for h in cross_history[-10:]:
                 speaker = BOT_NAME if h["role"] == "assistant" else USER_NAME
                 lines.append(f"{speaker}: {h['content']}")
         else:
-            # 私聊中注入群聊片段
-            label_hint = "群里的近期消息——可以自然地提起群里发生的事，像活人一样"
+            label_hint = "群里的近期消息"
             lines = []
             for h in cross_history[-10:]:
                 if h["role"] == "assistant":
