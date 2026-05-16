@@ -3,6 +3,7 @@ import re
 import json
 import base64
 import tempfile
+from collections import deque
 import requests
 import random
 import time
@@ -36,6 +37,7 @@ REACTION_KEYWORD_MAP = [
 LAST_SPOKE = {} # 记录每个群的主动发言时间
 HISTORY_CACHE = {} # {chat_id: list} 内存历史缓存
 LAST_SAVED = {} # {chat_id: float} 上次写 Gist 的时间戳
+SEEN_UPDATE_IDS = deque(maxlen=200)  # 去重：防 Telegram webhook 重试导致重复回复
 GROUP_SAVE_INTERVAL = 60 # 群聊旁听模式最多每 60 秒写一次 Gist
 LAST_WEBHOOK_CHECK = 0
 WEBHOOK_CHECK_INTERVAL = 7200 # 每 2 小时检查一次 webhook 健康状态
@@ -675,7 +677,12 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
 def webhook():
     data = request.get_json()
     if not data or "message" not in data: return "ok"
-    
+
+    update_id = data.get("update_id")
+    if update_id in SEEN_UPDATE_IDS:
+        return "ok"
+    SEEN_UPDATE_IDS.append(update_id)
+
     msg = data["message"]
     chat_id = str(msg.get("chat", {}).get("id", ""))
 
