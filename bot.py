@@ -735,11 +735,12 @@ def webhook():
     if chat_id.startswith("-"): # 如果在群里
         replied = msg.get("reply_to_message", {}) or {}
         replying_to_bot = bool(replied.get("from", {}).get("is_bot"))
-        if BOT_USERNAME and f"@{BOT_USERNAME}" not in user_text and not replying_to_bot:
+        mentioned = bool(BOT_USERNAME) and f"@{BOT_USERNAME}" in user_text
+        if not mentioned and not replying_to_bot:
             # 没被 @ 也不是回 bot，打上"只听不说"的标记，让现有冷却+概率路径决定
             should_reply = False
-        elif BOT_USERNAME:
-            # 被 @ 了，要把 @BotName 从文本里抠掉，免得大模型看着奇怪
+        if mentioned:
+            # 被 @ 了，把 @BotName 抠掉，免得大模型看着奇怪
             user_text = user_text.replace(f"@{BOT_USERNAME}", "").strip()
 
         # 群里只要有图就必须读+回：否则历史里只剩 [图片] 占位符，之后想"刚才那张图"就失忆了
