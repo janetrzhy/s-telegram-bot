@@ -736,8 +736,9 @@ def webhook():
         replied = msg.get("reply_to_message", {}) or {}
         replying_to_bot = bool(replied.get("from", {}).get("is_bot"))
         mentioned = bool(BOT_USERNAME) and f"@{BOT_USERNAME}" in user_text
-        if not mentioned and not replying_to_bot:
-            # 没被 @ 也不是回 bot，打上"只听不说"的标记，让现有冷却+概率路径决定
+        owner_replying = replying_to_bot and msg.get("from", {}).get("first_name", "") == OWNER_TG_NAME
+        if not mentioned and not owner_replying:
+            # 没被 @，也不是主人回复 bot → 走冷却+概率路径（包括其他人回复 bot 的情况）
             should_reply = False
         if mentioned:
             # 被 @ 了，把 @BotName 抠掉，免得大模型看着奇怪
