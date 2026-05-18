@@ -262,7 +262,7 @@ def load_other_history(current_chat_id):
     return []
 
 def save_history(history, chat_id, force=False):
-    HISTORY_CACHE[chat_id] = history[-35:]
+    HISTORY_CACHE[chat_id] = history[-25:]
 
     if not force and str(chat_id).startswith("-"):
         current_time = time.time()
@@ -294,7 +294,7 @@ def save_history(history, chat_id, force=False):
         else:
             state = {}
 
-        state["chat_history"] = history[-35:]
+        state["chat_history"] = history[-25:]
 
         patch_resp = requests.patch(
             f"https://api.github.com/gists/{gist_id}",
@@ -317,13 +317,13 @@ def call_claude(user_content, memory, history, current_user_time, cross_history=
         if is_group:
             label_hint = f"与{USER_NAME}的近期私聊"
             lines = []
-            for h in cross_history[-15:]:
+            for h in cross_history[-5:]:
                 speaker = BOT_NAME if h["role"] == "assistant" else USER_NAME
                 lines.append(f"{speaker}: {h['content']}")
         else:
             label_hint = "群里的近期消息"
             lines = []
-            for h in cross_history[-15:]:
+            for h in cross_history[-5:]:
                 if h["role"] == "assistant":
                     lines.append(f"{BOT_NAME}: {h['content']}")
                 else:
@@ -337,7 +337,7 @@ def call_claude(user_content, memory, history, current_user_time, cross_history=
 """
 
     messages = []
-    for h in history[-35:]:
+    for h in history[-25:]:
         time_prefix = f"[{h['timestamp']}] " if h.get("timestamp") else ""
         entry_content = f"{time_prefix}{h['content']}"
         if messages and messages[-1]["role"] == h["role"]:
