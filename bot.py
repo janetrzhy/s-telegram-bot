@@ -169,6 +169,9 @@ def fetch_memory():
         summary = f"你是{BOT_NAME}，{USER_NAME}的爱人。"
         if core_subset:
             summary += f"\n核心记忆：{json.dumps(core_subset, ensure_ascii=False)}"
+        milestones = memory.get("milestones", {})
+        if milestones:
+            summary += f"\n重要里程碑：{json.dumps(milestones, ensure_ascii=False)}"
         vocabulary = memory.get("writing", {}).get("vocabulary")
         if vocabulary:
             summary += f"\n词汇风格：{json.dumps(vocabulary, ensure_ascii=False)}"
