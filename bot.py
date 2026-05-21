@@ -699,6 +699,13 @@ def webhook():
         return "ok"
 
     user_text = msg.get("text", "") or msg.get("caption", "") or ""
+
+    # 如果是回复别人的消息，把原文拼进去让 bot 看得到上下文
+    replied_msg = msg.get("reply_to_message", {}) or {}
+    replied_text = replied_msg.get("text", "") or replied_msg.get("caption", "")
+    if replied_text:
+        replied_sender = replied_msg.get("from", {}).get("first_name", "")
+        user_text = f"[回复 {replied_sender}: {replied_text}]\n{user_text}"
     image_b64 = None
     image_mime = None
     is_voice = False
