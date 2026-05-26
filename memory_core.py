@@ -144,3 +144,18 @@ def build_weather(memory, hours, embed_text=False, maxlen=80):
         f"  (baseline v{baseline[0]} a{baseline[1]} → 当前 v{cur_v} a{cur_a})",
     ]
     return "\n".join(lines)
+
+
+def build_recent(memory, rolling_n=7, include_milestones=False):
+    """近期上下文块：rolling 最近 N 条（+ 可选 milestones）。core 不在这里（放客户端系统提示词）。"""
+    parts = []
+    entries = date_entries(memory.get("rolling_7days", {}))
+    if entries:
+        recent = entries[-rolling_n:] if rolling_n and rolling_n > 0 else entries
+        parts.append("[最近 · 新在最下，weather 里的'末条'=最后这条]\n"
+                     + "\n".join(f"{d} {t}" for d, t in recent))
+    if include_milestones:
+        ms = date_entries(memory.get("milestones", {}))
+        if ms:
+            parts.append("[里程碑]\n" + "\n".join(f"{d} {t}" for d, t in ms))
+    return "\n\n".join(parts)
