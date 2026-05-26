@@ -38,7 +38,7 @@ REACTION_KEYWORD_MAP = [
 LAST_SPOKE = {} # 记录每个群的主动发言时间
 HISTORY_CACHE = {} # {chat_id: list} 内存历史缓存
 LAST_SAVED = {} # {chat_id: float} 上次写 Gist 的时间戳
-LAST_SUMMARY_PERIOD = {} # {chat_id: period_str} 已生成摘要的时段，防并发重复触发
+MESSAGE_COUNTER = {} # {chat_id: int} 距上次摘要累计的消息数，满 30 触发一次压缩
 SEEN_UPDATE_IDS = deque(maxlen=200)  # 去重：防 Telegram webhook 重试导致重复回复
 GROUP_SAVE_INTERVAL = 60 # 群聊旁听模式最多每 60 秒写一次 Gist
 LAST_WEBHOOK_CHECK = 0
@@ -105,6 +105,11 @@ EDGE_TTS_URL = os.environ.get("EDGE_TTS_URL", "")
 WHISPER_URL = os.environ.get("WHISPER_BASE_URL") or CLAUDE_URL
 WHISPER_KEY = os.environ.get("WHISPER_API_KEY") or CLAUDE_KEY
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "whisper-1")
+
+# 🪶 轻量摘要：用 Groq 免费小模型做"上下文压缩"，默认复用 Whisper 那套 Groq 凭证
+GROQ_KEY = os.environ.get("GROQ_API_KEY") or os.environ.get("WHISPER_API_KEY", "")
+GROQ_URL = os.environ.get("GROQ_BASE_URL") or os.environ.get("WHISPER_BASE_URL") or "https://api.groq.com/openai/v1"
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 
 # ============ 核心函数 ============
 def self_heal_webhook():
@@ -293,35 +298,32 @@ def load_other_history(current_chat_id):
 
 def generate_rolling_summary(chat_id, history):
     try:
-        tz = ZoneInfo("Australia/Melbourne")
-        now = datetime.now(tz)
-        period = now.strftime("%Y-%m-%d ") + ("上午" if now.hour < 12 else "下午")
+        if not GROQ_KEY:
+            print("[WARNING] 没配 GROQ_KEY，跳过话题摘要")
+            return
 
-        lines = [h["content"] for h in history[-20:]]
+        lines = [h["content"] for h in history if h.get("content")]
         conversation = "\n".join(lines)
         if not conversation.strip():
             return
 
-        if not CLAUDE_PROVIDERS:
-            return
-        provider = CLAUDE_PROVIDERS[0]
+        tz = ZoneInfo("Australia/Melbourne")
+        label = datetime.now(tz).strftime("%Y-%m-%d %H:%M")
+
         body = {
-            "model": provider["models"][0],
-            "max_tokens": 120,
-            "system": "你是记录员，请用2-3句中文简要总结下面对话的主要话题和氛围，不要加评论。",
-            "messages": [{"role": "user", "content": conversation}]
+            "model": GROQ_MODEL,
+            "max_tokens": 300,
+            "messages": [
+                {"role": "system", "content": "你是对话记录员。把下面的聊天按话题浓缩成中文摘要，每个话题用1-3句话，只保留信息要点，不要寒暄、不要评论。"},
+                {"role": "user", "content": conversation}
+            ]
         }
-        headers = {
-            "x-api-key": provider["key"],
-            "content-type": "application/json",
-            "anthropic-version": "2023-06-01"
-        }
-        resp = requests.post(f"{provider['url'].rstrip('/')}/messages", headers=headers, json=body, timeout=30)
+        headers = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
+        resp = requests.post(f"{GROQ_URL.rstrip('/')}/chat/completions", headers=headers, json=body, timeout=30)
         if resp.status_code != 200:
-            print(f"[ERROR] 摘要生成失败: {resp.text[:200]}")
+            print(f"[ERROR] Groq 摘要失败 {resp.status_code}: {resp.text[:200]}")
             return
-        result = resp.json()
-        summary_text = next((b["text"].strip() for b in result.get("content", []) if b.get("type") == "text"), "")
+        summary_text = resp.json()["choices"][0]["message"]["content"].strip()
         if not summary_text:
             return
 
@@ -342,8 +344,8 @@ def generate_rolling_summary(chat_id, history):
         state = json.loads(file_content) if file_content.strip() else {}
 
         rolling = state.get("rolling_summaries", [])
-        rolling.append({"period": period, "summary": summary_text})
-        rolling = rolling[-6:]
+        rolling.append({"period": label, "summary": summary_text})
+        rolling = rolling[-10:]
         state["rolling_summaries"] = rolling
 
         requests.patch(
@@ -352,13 +354,18 @@ def generate_rolling_summary(chat_id, history):
             timeout=10
         )
         HISTORY_CACHE[f"{chat_id}_rolling"] = rolling
-        LAST_SUMMARY_PERIOD[chat_id] = period
-        print(f"[DEBUG] 📝 话题摘要已生成: {period}")
+        print(f"[DEBUG] 📝 Groq 话题摘要已生成 ({label})")
     except Exception as e:
         print(f"[ERROR] 生成摘要失败: {e}")
 
 def save_history(history, chat_id, force=False):
     HISTORY_CACHE[chat_id] = history[-30:]
+
+    # 每累计 30 条消息做一次轻量摘要（上下文压缩），按量触发不漏话题
+    MESSAGE_COUNTER[chat_id] = MESSAGE_COUNTER.get(chat_id, 0) + 1
+    if MESSAGE_COUNTER[chat_id] >= 30:
+        MESSAGE_COUNTER[chat_id] = 0
+        Thread(target=generate_rolling_summary, args=(chat_id, list(HISTORY_CACHE[chat_id]))).start()
 
     if not force and str(chat_id).startswith("-"):
         current_time = time.time()
@@ -775,17 +782,7 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         history.append({"role": "assistant", "content": reply, "timestamp": b_time})
         
         # 💾 只有在真正开口说话的这一刻，才进行一次极其珍贵的 GitHub 存档！
-        save_history(history, chat_id, force=True)  # bot 回复时强制写入
-
-        # 每个上午/下午时段生成一次话题摘要，晚上不活动就不产生
-        _tz = ZoneInfo("Australia/Melbourne")
-        _now = datetime.now(_tz)
-        _period = _now.strftime("%Y-%m-%d ") + ("上午" if _now.hour < 12 else "下午")
-        _rolling = load_rolling_summaries(chat_id)
-        _already = any(r.get("period") == _period for r in _rolling) or LAST_SUMMARY_PERIOD.get(chat_id) == _period
-        if not _already:
-            LAST_SUMMARY_PERIOD[chat_id] = _period  # 占位，防并发
-            Thread(target=generate_rolling_summary, args=(chat_id, history[:])).start()
+        save_history(history, chat_id, force=True)  # bot 回复时强制写入（摘要触发在 save_history 内）
         
     except Exception as e:
         import traceback
