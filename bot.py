@@ -38,7 +38,9 @@ REACTION_KEYWORD_MAP = [
 LAST_SPOKE = {} # 记录每个群的主动发言时间
 HISTORY_CACHE = {} # {chat_id: list} 内存历史缓存
 LAST_SAVED = {} # {chat_id: float} 上次写 Gist 的时间戳
-MESSAGE_COUNTER = {} # {chat_id: int} 距上次摘要累计的消息数，满 30 触发一次压缩
+SUMMARY_BUFFER = {} # {chat_id: list} 自上次摘要以来累计的新消息，攒够阈值就压缩成一条摘要
+SUMMARY_THRESHOLD_GROUP = 50 # 群聊每 50 条消息摘要一次
+SUMMARY_THRESHOLD_PRIVATE = 30 # 私聊每 30 条消息摘要一次
 SEEN_UPDATE_IDS = deque(maxlen=200)  # 去重：防 Telegram webhook 重试导致重复回复
 GROUP_SAVE_INTERVAL = 60 # 群聊旁听模式最多每 60 秒写一次 Gist
 LAST_WEBHOOK_CHECK = 0
@@ -358,14 +360,18 @@ def generate_rolling_summary(chat_id, history):
     except Exception as e:
         print(f"[ERROR] 生成摘要失败: {e}")
 
-def save_history(history, chat_id, force=False):
+def save_history(history, chat_id, force=False, new_msgs=1):
     HISTORY_CACHE[chat_id] = history[-30:]
 
-    # 每累计 30 条消息做一次轻量摘要（上下文压缩），按量触发不漏话题
-    MESSAGE_COUNTER[chat_id] = MESSAGE_COUNTER.get(chat_id, 0) + 1
-    if MESSAGE_COUNTER[chat_id] >= 30:
-        MESSAGE_COUNTER[chat_id] = 0
-        Thread(target=generate_rolling_summary, args=(chat_id, list(HISTORY_CACHE[chat_id]))).start()
+    # 轻量摘要（上下文压缩）：用独立 buffer 攒「自上次摘要以来」的全部新消息，
+    # 与提示词窗口（只保留 30 条）解耦——这样群聊阈值即便设到 50，也不会因为
+    # 窗口只有 30 而丢掉中间的消息。攒够阈值就整批压缩成一条摘要，无缝衔接。
+    buf = SUMMARY_BUFFER.setdefault(chat_id, [])
+    buf.extend(history[-new_msgs:])  # 刚 append 进来的就是末尾这 new_msgs 条
+    threshold = SUMMARY_THRESHOLD_GROUP if str(chat_id).startswith("-") else SUMMARY_THRESHOLD_PRIVATE
+    if len(buf) >= threshold:
+        Thread(target=generate_rolling_summary, args=(chat_id, list(buf))).start()
+        SUMMARY_BUFFER[chat_id] = []
 
     if not force and str(chat_id).startswith("-"):
         current_time = time.time()
@@ -732,7 +738,7 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
                 if random.random() < REACTION_PROBABILITY:
                     print(f"[DEBUG] 🎲 表情骰子命中，准备点 reaction")
                     send_reaction(chat_id, msg_id, text)
-            save_history(history, chat_id)  # 受 60s 节流
+            save_history(history, chat_id, new_msgs=1)  # 旁听只加了 1 条用户消息；受 60s 节流
             return
 
         print(f"[DEBUG] 🗣️ Bot 被唤醒！开始燃烧老公的算力...")
@@ -782,7 +788,7 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         history.append({"role": "assistant", "content": reply, "timestamp": b_time})
         
         # 💾 只有在真正开口说话的这一刻，才进行一次极其珍贵的 GitHub 存档！
-        save_history(history, chat_id, force=True)  # bot 回复时强制写入（摘要触发在 save_history 内）
+        save_history(history, chat_id, force=True, new_msgs=2)  # 用户+bot 共 2 条；摘要触发在 save_history 内
         
     except Exception as e:
         import traceback
