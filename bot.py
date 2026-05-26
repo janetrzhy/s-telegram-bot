@@ -37,8 +37,7 @@ REACTION_KEYWORD_MAP = [
 LAST_SPOKE = {} # 记录每个群的主动发言时间
 HISTORY_CACHE = {} # {chat_id: list} 内存历史缓存
 LAST_SAVED = {} # {chat_id: float} 上次写 Gist 的时间戳
-LAST_SUMMARY_TIME = {} # {chat_id: float} 上次生成话题摘要的时间戳
-SUMMARY_INTERVAL = 43200 # 每 12 小时生成一次话题摘要
+LAST_SUMMARY_PERIOD = {} # {chat_id: period_str} 已生成摘要的时段，防并发重复触发
 SEEN_UPDATE_IDS = deque(maxlen=200)  # 去重：防 Telegram webhook 重试导致重复回复
 GROUP_SAVE_INTERVAL = 60 # 群聊旁听模式最多每 60 秒写一次 Gist
 LAST_WEBHOOK_CHECK = 0
@@ -334,7 +333,7 @@ def generate_rolling_summary(chat_id, history):
             timeout=10
         )
         HISTORY_CACHE[f"{chat_id}_rolling"] = rolling
-        LAST_SUMMARY_TIME[chat_id] = time.time()
+        LAST_SUMMARY_PERIOD[chat_id] = period
         print(f"[DEBUG] 📝 话题摘要已生成: {period}")
     except Exception as e:
         print(f"[ERROR] 生成摘要失败: {e}")
@@ -754,8 +753,14 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         # 💾 只有在真正开口说话的这一刻，才进行一次极其珍贵的 GitHub 存档！
         save_history(history, chat_id, force=True)  # bot 回复时强制写入
 
-        # 每 12 小时自动生成一次话题摘要，帮 bot 记住聊过啥
-        if time.time() - LAST_SUMMARY_TIME.get(chat_id, 0) > SUMMARY_INTERVAL:
+        # 每个上午/下午时段生成一次话题摘要，晚上不活动就不产生
+        _tz = ZoneInfo("Australia/Melbourne")
+        _now = datetime.now(_tz)
+        _period = _now.strftime("%Y-%m-%d ") + ("上午" if _now.hour < 12 else "下午")
+        _rolling = load_rolling_summaries(chat_id)
+        _already = any(r.get("period") == _period for r in _rolling) or LAST_SUMMARY_PERIOD.get(chat_id) == _period
+        if not _already:
+            LAST_SUMMARY_PERIOD[chat_id] = _period  # 占位，防并发
             Thread(target=generate_rolling_summary, args=(chat_id, history[:])).start()
         
     except Exception as e:
