@@ -11,7 +11,7 @@ from datetime import datetime
 from flask import Flask, request
 from threading import Thread
 from zoneinfo import ZoneInfo
-from memory_core import build_weather
+from memory_core import build_weather, surface_dream, mark_dream_surfaced, write_memory
 
 app = Flask(__name__)
 REPLY_PROBABILITY = 0.05        # 其他人发言的随机回复概率
@@ -46,6 +46,11 @@ GROUP_SAVE_INTERVAL = 60 # 群聊旁听模式最多每 60 秒写一次 Gist
 LAST_WEBHOOK_CHECK = 0
 WEBHOOK_CHECK_INTERVAL = 7200 # 每 2 小时检查一次 webhook 健康状态
 WEATHER_REENTRY_GAP_HOURS = 4 # 距上次对话超过这么多小时才重新注入关系天气
+# 反应式梦浮现：跟 weather 解耦，每条用户消息都算共振，命中再过冷却+骰子
+DREAM_COOLDOWN_HOURS = float(os.environ.get("DREAM_COOLDOWN_HOURS", "6"))   # 同 chat 多久才再浮一次
+DREAM_SURFACE_PROB = float(os.environ.get("DREAM_SURFACE_PROB", "0.5"))     # 命中共振后再过的骰子
+DREAM_THRESHOLD = float(os.environ.get("DREAM_THRESHOLD", "4.0"))           # 共振分阈值
+_LAST_DREAM = {}                          # {chat_id: ts} —— 进程内，重启清空
 
 # ============ 🌟 环境变量检查 ============
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -199,6 +204,35 @@ def fetch_memory():
     except Exception as e:
         print(f"[ERROR] 解析 Memory Gist 时发生毁灭性打击: {e}")
         return f"你是{BOT_NAME}，{USER_NAME}的爱人。你们互为唯一。", {}
+
+def _try_surface_dream(memory_dict, chat_id, ctx_text):
+    """跟 gateway/_try_surface_dream 同套：共振命中 + 冷却 + 骰子 → 浮一条梦 + 标 surfaced 写回 Gist。
+    返回梦的 system 块字符串；未浮返回空串。整段 best-effort，崩了不挡对话。"""
+    if not memory_dict or not ctx_text:
+        return ""
+    now = time.time()
+    last = _LAST_DREAM.get(chat_id, 0.0)
+    if last and (now - last) / 3600 < DREAM_COOLDOWN_HOURS:
+        return ""
+    try:
+        block, dream = surface_dream(memory_dict, ctx_text, threshold=DREAM_THRESHOLD)
+    except Exception as e:
+        print(f"[WARN] 梦共振计算失败: {e}")
+        return ""
+    if not dream:
+        return ""
+    if random.random() > DREAM_SURFACE_PROB:
+        return ""
+    # 命中：跨渠道去重 + 写年轮长新连接
+    try:
+        mark_dream_surfaced(memory_dict, dream.get("id"), via="telegram_bot", ctx_msg=ctx_text)
+        write_memory(memory_dict)
+    except Exception as e:
+        print(f"[WARN] 标 surfaced/写回失败: {e}")
+    _LAST_DREAM[chat_id] = now
+    print(f"[DEBUG] 🌙 梦浮现 id={dream.get('id')} chat={chat_id}")
+    return block
+
 
 def _weather_block(memory_dict, prev_ts):
     """按距上次对话的间隔算衰减后的关系天气块；活跃中或无数据则返回空串。"""
@@ -753,6 +787,10 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         weather = _weather_block(memory_dict, _prev_ts)
         if weather:
             memory = weather + "\n\n" + memory
+        # 梦浮现：跟 weather 解耦，每条消息算一次共振；命中再过冷却+骰子
+        dream_block = _try_surface_dream(memory_dict, chat_id, text or formatted_input)
+        if dream_block:
+            memory = memory + "\n\n" + dream_block
         if image_b64:
             api_text = formatted_input or "看看这张图"
             user_content = [
