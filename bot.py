@@ -478,7 +478,7 @@ def call_claude(user_content, memory, history, current_user_time, cross_history=
     rolling_context = ""
     if summaries:
         label = "群里近期话题" if is_group else "近期话题"
-        entries = "\n".join(f"[{r['period']}] {r['summary']}" for r in summaries)
+        entries = "\n".join(f"[{r.get('covers_until', '')}] {r.get('text', '')}" for r in summaries)
         rolling_context = f"\n\n[{label}摘要]\n{entries}"
 
     system = f"""你是{BOT_NAME}。{USER_NAME}在Telegram上跟你说话。
