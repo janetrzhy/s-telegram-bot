@@ -67,7 +67,7 @@ ALLOWED_IDS = [i.strip() for i in TG_CHAT_ID_RAW.split(",") if i.strip()]
 CLAUDE_KEY = os.environ.get("CLAUDE_API_KEY")
 CLAUDE_URL = os.environ.get("CLAUDE_BASE_URL")
 # 模型名：和 URL/Key 经常一起改，所以也走环境变量。逗号分隔多个会随机轮选
-CLAUDE_MODEL_RAW = os.environ.get("CLAUDE_MODEL", "按量L-claude-opus-4-6,按量L-claude-opus-4-6-thinking")
+CLAUDE_MODEL_RAW = os.environ.get("CLAUDE_MODEL", "[稳定AG量]claude-opus-4-6-thinking,[AG量]claude-opus-4-6-thinking")
 CLAUDE_MODELS = [m.strip() for m in CLAUDE_MODEL_RAW.split(",") if m.strip()]
 
 # 多 provider 失败转移：CLAUDE_API_KEY/CLAUDE_BASE_URL/CLAUDE_MODEL 是 #1，
@@ -117,7 +117,7 @@ WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "whisper-1")
 # 🪶 轻量摘要：用 Groq 免费小模型做"上下文压缩"，默认复用 Whisper 那套 Groq 凭证
 GROQ_KEY = os.environ.get("GROQ_API_KEY") or os.environ.get("WHISPER_API_KEY", "")
 GROQ_URL = os.environ.get("GROQ_BASE_URL") or os.environ.get("WHISPER_BASE_URL") or "https://api.groq.com/openai/v1"
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 # ============ 核心函数 ============
 def self_heal_webhook():
