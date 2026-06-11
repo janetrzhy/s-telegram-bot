@@ -382,9 +382,10 @@ def summarize_messages(messages):
             "messages": [{"role": "user", "content": prompt}]
         }
         hdrs = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
-        resp = requests.post(f"{GROQ_URL.rstrip(chr(47))}/chat/completions", headers=hdrs, json=body, timeout=30)
+        url = f"{GROQ_URL.rstrip(chr(47))}/chat/completions"
+        resp = requests.post(url, headers=hdrs, json=body, timeout=30)
         if resp.status_code != 200:
-            print(f"[ERROR] Groq summary failed {resp.status_code}")
+            print(f"[ERROR] Groq summary HTTP {resp.status_code} url={url} model={GROQ_MODEL} body={resp.text[:300]}")
             return None
         text = resp.json()["choices"][0]["message"]["content"].strip()
         return text if text else None
