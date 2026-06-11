@@ -387,7 +387,12 @@ def summarize_messages(messages):
         if resp.status_code != 200:
             print(f"[ERROR] Groq summary HTTP {resp.status_code} url={url} model={GROQ_MODEL} body={resp.text[:300]}")
             return None
-        text = resp.json()["choices"][0]["message"]["content"].strip()
+        msg = resp.json()["choices"][0].get("message", {})
+        # 推理模型可能在 reasoning_content 里思考，正文在 content 里
+        text = (msg.get("content") or msg.get("reasoning_content") or "").strip()
+        # 保险：去除任何残留的思考/推理标签
+        text = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL).strip()
+        text = re.sub(r'<reasoning>.*?</reasoning>', '', text, flags=re.DOTALL).strip()
         return text if text else None
     except Exception as e:
         print(f"[ERROR] summary failed: {e}")
