@@ -117,7 +117,7 @@ WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "whisper-1")
 # 🪶 轻量摘要：用 Groq 免费小模型做"上下文压缩"，默认复用 Whisper 那套 Groq 凭证
 GROQ_KEY = os.environ.get("GROQ_API_KEY") or os.environ.get("WHISPER_API_KEY", "")
 GROQ_URL = os.environ.get("GROQ_BASE_URL") or os.environ.get("WHISPER_BASE_URL") or "https://api.groq.com/openai/v1"
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "qwen3-32b")
 
 # ============ 核心函数 ============
 def self_heal_webhook():
