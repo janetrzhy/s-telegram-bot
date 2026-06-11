@@ -15,7 +15,7 @@ from memory_core import build_weather, surface_dream, mark_dream_surfaced, write
 
 app = Flask(__name__)
 REPLY_PROBABILITY = 0.05        # 其他人发言的随机回复概率
-REPLY_PROBABILITY_OWNER = 0.4   # USER_NAME 发言的随机回复概率
+REPLY_PROBABILITY_OWNER = 0.2   # USER_NAME 发言的随机回复概率
 TRIGGER_WORDS = ["人机", "燕燕生气了", "人呢", "Claude"] # 敏感词：群里一提到这些，必然跳出来接茬！
 COOLDOWN_TIME = 120 # 强制冷却 60 秒
 REACTION_PROBABILITY = 0.1  # 旁听时给别人消息点表情的概率
