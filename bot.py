@@ -375,7 +375,7 @@ def summarize_messages(messages):
             lns.append(f"[{ts}] {role}: {cnt}")
         if not lns:
             return None
-        prompt = "summarize the following chat in Chinese:\n\n" + "\n".join(lns)
+        prompt = "把下面的聊天按话题浓缩成中文摘要，每个话题1-3句话。以assistant视角总结，如有印象深刻的发言、有趣观点、吐槽恶搞，顺带标注是谁说的。只保留要点，不要原句。\n\n" + "\n".join(lns)
         body = {
             "model": GROQ_MODEL,
             "max_tokens": 300,
