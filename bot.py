@@ -9,7 +9,7 @@ import random
 import time
 from datetime import datetime
 from flask import Flask, request
-from threading import Thread
+from threading import Thread, Lock
 from zoneinfo import ZoneInfo
 from memory_core import build_weather, surface_dream, mark_dream_surfaced, write_memory
 
@@ -43,6 +43,7 @@ LAST_SAVED = {} # {chat_id: float} 上次写 Gist 的时间戳
 SUMMARY_TRIGGER_COUNT = 30
 MAX_SUMMARIES = 10 # 私聊每 30 条消息摘要一次
 SEEN_UPDATE_IDS = deque(maxlen=200)  # 去重：防 Telegram webhook 重试导致重复回复
+CHAT_LOCKS = {}  # {chat_id: Lock} 串行化同 chat 的消息处理，防并发重复回复
 GROUP_SAVE_INTERVAL = 60 # 群聊旁听模式最多每 60 秒写一次 Gist
 LAST_WEBHOOK_CHECK = 0
 WEBHOOK_CHECK_INTERVAL = 7200 # 每 2 小时检查一次 webhook 健康状态
@@ -728,6 +729,10 @@ def send_telegram_voice(chat_id, text, reply_to_message_id=None):
 # ============ 影分身后台任务 ============
 def process_message_background(text, chat_id, sender_name, msg_date=None, should_reply=True, msg_id=None,
                                image_b64=None, image_mime=None, is_voice=False):
+    # 串行化：同 chat 的消息排队处理，避免并发读到相同的历史导致重复回复
+    if chat_id not in CHAT_LOCKS:
+        CHAT_LOCKS[chat_id] = Lock()
+    CHAT_LOCKS[chat_id].acquire()
     try:
         tz = ZoneInfo("Australia/Melbourne")
         u_time = datetime.fromtimestamp(msg_date, tz).strftime("%Y-%m-%d %H:%M:%S") if msg_date else datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
@@ -841,10 +846,12 @@ def process_message_background(text, chat_id, sender_name, msg_date=None, should
         import traceback
         print(f"[CRITICAL] 后台崩了: {e}\n{traceback.format_exc()}")
         try:
-            if should_reply: 
+            if should_reply:
                 send_telegram(chat_id, f"😵 出错了：{str(e)[:100]}")
-        except: 
+        except:
             pass
+    finally:
+        CHAT_LOCKS[chat_id].release()
 
 # ============ 路由接口 ============
 @app.route("/webhook", methods=["POST"])
