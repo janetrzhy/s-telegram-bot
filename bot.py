@@ -408,6 +408,9 @@ def save_history(history, chat_id, force=False, new_msgs=1):
     target_url = get_target_gist_url(chat_id)
     if not GIST_TOKEN or not target_url:
         return
+    # 先记录写入时间，防止 API 失败（如 rate limit）导致 LAST_SAVED 不更新，
+    # 下一条消息又立刻重试 → 级联失败把速率限制打满
+    LAST_SAVED[chat_id] = time.time()
     try:
         gist_id = target_url.split("/")[4]
         headers = {
@@ -457,7 +460,6 @@ def save_history(history, chat_id, force=False, new_msgs=1):
         if patch_resp.status_code != 200:
             print(f"[ERROR] gist patch failed: {patch_resp.text}")
         else:
-            LAST_SAVED[chat_id] = time.time()
             HISTORY_CACHE[f"{chat_id}_rolling"] = summaries
     except Exception as e:
         print(f"[ERROR] save failed: {e}")
