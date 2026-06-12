@@ -390,9 +390,9 @@ def summarize_messages(messages):
             return None
         msg = resp.json()["choices"][0].get("message", {})
         # 推理模型可能在 reasoning_content 里思考，正文在 content 里
-        # Qwen3：content 字段 = <think>...</think>\n正文（不是 reasoning_content 字段）
+        # Qwen3：content 字段可能包含 <think> 或 <thinking> 标签
         raw = (msg.get("content") or msg.get("reasoning_content") or "").strip()
-        text = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
+        text = re.sub(r'<think(?:ing)?>.*?</think(?:ing)?>', '', raw, flags=re.DOTALL).strip()
         return text if text else None
     except Exception as e:
         print(f"[ERROR] summary failed: {e}")
@@ -534,11 +534,15 @@ def call_claude(user_content, memory, history, current_user_time, cross_history=
                     if block.get("type") == "text":
                         if idx > 1:
                             print(f"[INFO] ✅ provider#{idx} 救场成功")
-                        return re.sub(r'\n{2,}', '\n', block["text"].strip())
+                        raw = block["text"].strip()
+                        raw = re.sub(r'<think(?:ing)?>.*?</think(?:ing)?>', '', raw, flags=re.DOTALL).strip()
+                        return re.sub(r'\n{2,}', '\n', raw)
             elif "choices" in result:
                 if idx > 1:
                     print(f"[INFO] ✅ provider#{idx} 救场成功")
-                return re.sub(r'\n{2,}', '\n', result["choices"][0]["message"]["content"].strip())
+                raw = result["choices"][0]["message"]["content"].strip()
+                raw = re.sub(r'<think(?:ing)?>.*?</think(?:ing)?>', '', raw, flags=re.DOTALL).strip()
+                return re.sub(r'\n{2,}', '\n', raw)
             print(f"[ERROR] provider#{idx} 响应没 text 块: {str(result)[:200]}")
         except Exception as e:
             print(f"[ERROR] provider#{idx} 异常: {e}")
