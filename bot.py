@@ -390,10 +390,9 @@ def summarize_messages(messages):
             return None
         msg = resp.json()["choices"][0].get("message", {})
         # 推理模型可能在 reasoning_content 里思考，正文在 content 里
-        text = (msg.get("content") or msg.get("reasoning_content") or "").strip()
-        # 保险：去除任何残留的思考/推理标签
-        text = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL).strip()
-        text = re.sub(r'<reasoning>.*?</reasoning>', '', text, flags=re.DOTALL).strip()
+        # Qwen3：content 字段 = <think>...</think>\n正文（不是 reasoning_content 字段）
+        raw = (msg.get("content") or msg.get("reasoning_content") or "").strip()
+        text = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
         return text if text else None
     except Exception as e:
         print(f"[ERROR] summary failed: {e}")
